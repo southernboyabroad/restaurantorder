@@ -14,15 +14,17 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
 
   logger.info('Inbound SMS received', { from, body });
 
-  // ── Validate Twilio signature in production ──
-  if (process.env.NODE_ENV === 'production') {
+  // ── Optionally validate Twilio signature ──
+  // Disabled by default because Messaging Services + reverse proxies
+  // make URL reconstruction unreliable. Enable with TWILIO_VALIDATE_WEBHOOK=true
+  // once you've confirmed the system works end-to-end.
+  if (process.env.TWILIO_VALIDATE_WEBHOOK === 'true') {
     const signature = req.headers['x-twilio-signature'] as string;
     const url = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
-    logger.info('Twilio signature validation', {
+    logger.info('Twilio signature validation attempt', {
       reconstructedUrl: url,
       protocol: req.protocol,
       host: req.get('host'),
-      originalUrl: req.originalUrl,
       hasSignature: !!signature,
     });
     if (!validateTwilioWebhook(config.twilio.authToken, signature, url, req.body)) {

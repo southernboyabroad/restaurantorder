@@ -38,7 +38,7 @@ export const config = {
     apiKey: optional('OPENAI_API_KEY', ''),
   },
 
-  products: optional('PRODUCTS', 'chicken,ribs,pulled_pork,brisket,coleslaw,beans')
+  products: optional('PRODUCTS', 'toast,4-inch,long,institutional_sandwich,dinner_rolls')
     .split(',')
     .map((p) => p.trim().toLowerCase()),
 } as const;
