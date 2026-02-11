@@ -6,6 +6,10 @@ import logger from './logger';
 
 const app = express();
 
+app.get('/', (req, res) => {
+  res.send('Restaurant Order Service is running.');
+});
+
 // ── Webhook routes ──────────────────────────────────────────────
 app.use('/', webhookRouter);
 
@@ -15,6 +19,6 @@ app.listen(config.port, () => {
   logger.info(`Timezone: ${process.env.TZ || '(system default)'}`);
   logger.info(`Products: ${config.products.join(', ')}`);
 
-  // Start the cron scheduler
   startScheduler();
 });
+
