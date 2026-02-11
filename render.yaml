@@ -1,0 +1,35 @@
+# Render Blueprint — deploy with "New > Blueprint" in the Render dashboard
+services:
+  - type: web
+    name: restaurant-order-sms
+    runtime: docker
+    plan: free
+    envVars:
+      - key: TZ
+        value: America/New_York
+      - key: PORT
+        value: "3000"
+      - key: NODE_ENV
+        value: production
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_PHONE_NUMBER
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_KEY_BASE64
+        sync: false
+      - key: GOOGLE_SHEET_ID
+        sync: false
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: SENDGRID_FROM_EMAIL
+        sync: false
+      - key: WAREHOUSE_EMAIL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: PRODUCTS
+        value: "chicken,ribs,pulled_pork,brisket,coleslaw,beans"
+      - key: LOG_LEVEL
+        value: info
