@@ -6,7 +6,14 @@ import logger from './logger';
 
 const app = express();
 
-app.get('/', (req, res) => {
+// ── Trust reverse proxy (Render, Railway, etc.) ─────────────────
+// Without this, req.protocol returns "http" behind the proxy,
+// which breaks Twilio webhook signature validation (Twilio signs
+// against the public https:// URL).
+app.set('trust proxy', 1);
+
+// ── Homepage ────────────────────────────────────────────────────
+app.get('/', (_req, res) => {
   res.send('Restaurant Order Service is running.');
 });
 

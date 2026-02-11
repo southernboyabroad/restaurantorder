@@ -13,6 +13,10 @@ export interface ParsedOrder {
 //   "10 chicken, 5 ribs"
 //   "chicken: 10 | ribs: 5"
 
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function parseOrderStrict(text: string): ParsedOrder | null {
   const quantities: Record<string, number> = {};
   let matchCount = 0;
@@ -21,10 +25,11 @@ export function parseOrderStrict(text: string): ParsedOrder | null {
 
   for (const product of config.products) {
     const displayName = product.replace(/_/g, ' ');
-    // "chicken 10" or "chicken: 10" or "10 chicken"
+    const escaped = escapeRegex(displayName);
+    // "toast 10" or "toast: 10" or "10 toast" or "4-inch 10" etc.
     const patterns = [
-      new RegExp(`${displayName}\\s*[:=]?\\s*(\\d+)`, 'i'),
-      new RegExp(`(\\d+)\\s+${displayName}`, 'i'),
+      new RegExp(`${escaped}\\s*[:=]?\\s*(\\d+)`, 'i'),
+      new RegExp(`(\\d+)\\s+${escaped}`, 'i'),
     ];
 
     for (const pattern of patterns) {

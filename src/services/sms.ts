@@ -28,7 +28,7 @@ export function buildOrderPromptMessage(customerName: string): string {
     `Hi ${customerName}! Time to place your order for the next delivery.\n\n` +
     `Available products: ${productList}\n\n` +
     `Reply with quantities, e.g.:\n` +
-    `chicken 10, ribs 5, coleslaw 20\n\n` +
+    `toast 10, 4-inch 5, long 20\n\n` +
     `Or just tell us what you need and we'll figure it out!`
   );
 }

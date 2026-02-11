@@ -18,11 +18,22 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
   if (process.env.NODE_ENV === 'production') {
     const signature = req.headers['x-twilio-signature'] as string;
     const url = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+    logger.info('Twilio signature validation', {
+      reconstructedUrl: url,
+      protocol: req.protocol,
+      host: req.get('host'),
+      originalUrl: req.originalUrl,
+      hasSignature: !!signature,
+    });
     if (!validateTwilioWebhook(config.twilio.authToken, signature, url, req.body)) {
-      logger.warn('Invalid Twilio signature — rejecting webhook', { from });
+      logger.warn('Invalid Twilio signature — rejecting webhook', {
+        from,
+        reconstructedUrl: url,
+      });
       res.status(403).send('Forbidden');
       return;
     }
+    logger.info('Twilio signature validation passed');
   }
 
   try {
@@ -46,7 +57,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       logger.warn('Could not parse order from reply', { from, body });
       await sendSms(
         from,
-        `Hi ${customer.name}, we couldn't understand your order. Please reply with quantities like:\nchicken 10, ribs 5, coleslaw 20`,
+        `Hi ${customer.name}, we couldn't understand your order. Please reply with quantities like:\ntoast 10, 4-inch 5, long 20`,
       );
       res.type('text/xml').send('<Response></Response>');
       return;

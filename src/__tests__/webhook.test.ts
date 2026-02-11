@@ -1,6 +1,6 @@
 jest.mock('../config', () => ({
   config: {
-    products: ['chicken', 'ribs', 'pulled_pork', 'brisket', 'coleslaw', 'beans'],
+    products: ['toast', '4-inch', 'long', 'institutional_sandwich', 'dinner_rolls'],
     twilio: {
       accountSid: 'ACtest',
       authToken: 'test_token',
@@ -38,10 +38,6 @@ const mockFindCustomer = findCustomerByPhone as jest.MockedFunction<typeof findC
 const mockParseOrder = parseOrder as jest.MockedFunction<typeof parseOrder>;
 const mockSendSms = sendSms as jest.MockedFunction<typeof sendSms>;
 
-// We need supertest for HTTP testing
-// It's not in package.json, so these tests show the expected behavior
-// Install with: npm install --save-dev supertest @types/supertest
-
 describe('POST /sms webhook', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -50,12 +46,12 @@ describe('POST /sms webhook', () => {
 
   it('returns 200 and records order for known customer with valid order', async () => {
     mockFindCustomer.mockResolvedValue({ name: 'Alice', phone: '+15551111111' });
-    mockParseOrder.mockResolvedValue({ quantities: { chicken: 10 }, confident: true });
+    mockParseOrder.mockResolvedValue({ quantities: { toast: 10 }, confident: true });
 
     const res = await request(app)
       .post('/sms')
       .type('form')
-      .send({ Body: 'chicken 10', From: '+15551111111' });
+      .send({ Body: 'toast 10', From: '+15551111111' });
 
     expect(res.status).toBe(200);
     expect(mockSendSms).toHaveBeenCalledWith(
@@ -70,7 +66,7 @@ describe('POST /sms webhook', () => {
     const res = await request(app)
       .post('/sms')
       .type('form')
-      .send({ Body: 'chicken 10', From: '+15559999999' });
+      .send({ Body: 'toast 10', From: '+15559999999' });
 
     expect(res.status).toBe(200);
     expect(mockSendSms).toHaveBeenCalledWith(
