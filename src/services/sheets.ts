@@ -40,6 +40,12 @@ function getClient(): sheets_v4.Sheets {
   return sheetsClient;
 }
 
+// ── Expose the authenticated client for other services ──────────
+
+export function getSheetsClient(): sheets_v4.Sheets {
+  return getClient();
+}
+
 // ── Read customers ──────────────────────────────────────────────
 
 export async function getCustomers(): Promise<Customer[]> {

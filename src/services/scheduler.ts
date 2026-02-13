@@ -4,6 +4,7 @@ import { sendSms, buildOrderPromptMessage } from './sms';
 import { generateSummariesByRoute, formatSummaryText, formatSummaryHtml } from './orderSummary';
 import { sendWarehouseEmail } from './email';
 import { ensureOrdersSheet } from './sheets';
+import { ensureDeliveryTab } from './deliveryTab';
 import logger from '../logger';
 
 function todayDateStr(): string {
@@ -21,6 +22,13 @@ async function morningJob(): Promise<void> {
   logger.info('=== MORNING JOB START ===');
   try {
     await ensureOrdersSheet();
+    // Create the delivery date tab (e.g. "DLVR 2-14") if it doesn't exist yet
+    try {
+      await ensureDeliveryTab();
+    } catch (tabErr) {
+      logger.error('Failed to create delivery tab', { error: tabErr });
+      // Non-fatal — continue with the SMS blast
+    }
     const customers = await getCustomers();
 
     if (customers.length === 0) {

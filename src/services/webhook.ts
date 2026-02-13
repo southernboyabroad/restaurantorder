@@ -4,6 +4,7 @@ import { validateTwilioWebhook } from './sms';
 import { findCustomerByPhone, appendOrder } from './sheets';
 import { parseOrder } from './orderParser';
 import { sendSms } from './sms';
+import { updateDeliveryTabOrder } from './deliveryTab';
 import logger from '../logger';
 
 export const webhookRouter = express.Router();
@@ -75,6 +76,14 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       quantities: parsed.quantities,
       rawReply: body,
     });
+
+    // Also update the delivery date tab (second mechanism)
+    try {
+      await updateDeliveryTabOrder(customer.name, parsed.quantities);
+    } catch (tabErr) {
+      logger.error('Failed to update delivery tab', { error: tabErr });
+      // Non-fatal — the flat Orders sheet already has the order
+    }
 
     // Build a confirmation
     const items = Object.entries(parsed.quantities)
