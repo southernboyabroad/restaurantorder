@@ -71,6 +71,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       date: dateStr,
       phone: customer.phone,
       name: customer.name,
+      route: customer.route || '',
       quantities: parsed.quantities,
       rawReply: body,
     });

@@ -1,13 +1,18 @@
 import cron from 'node-cron';
 import { getCustomers } from './sheets';
 import { sendSms, buildOrderPromptMessage } from './sms';
-import { generateSummary, formatSummaryText, formatSummaryHtml } from './orderSummary';
+import { generateSummariesByRoute, formatSummaryText, formatSummaryHtml } from './orderSummary';
 import { sendWarehouseEmail } from './email';
 import { ensureOrdersSheet } from './sheets';
 import logger from '../logger';
 
 function todayDateStr(): string {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+function todayDisplayDate(): string {
+  const now = new Date();
+  return `${now.getMonth() + 1}-${now.getDate()}-${now.getFullYear()}`; // M-D-YYYY
 }
 
 // ── 8:00 AM ET — Mon, Wed, Fri — send order prompts ────────────
@@ -44,17 +49,24 @@ async function afternoonJob(): Promise<void> {
   logger.info('=== AFTERNOON JOB START ===');
   try {
     const dateStr = todayDateStr();
-    const summary = await generateSummary(dateStr);
+    const displayDate = todayDisplayDate();
+    const summaries = await generateSummariesByRoute(dateStr);
 
-    if (summary.orderCount === 0) {
-      logger.warn('No orders found today — sending empty summary email');
+    if (summaries.length === 0) {
+      logger.warn('No orders found today — skipping email');
+      return;
     }
 
-    const subject = `Order Summary — ${dateStr}`;
-    const textBody = formatSummaryText(summary);
-    const htmlBody = formatSummaryHtml(summary);
+    for (const summary of summaries) {
+      const routeLabel = summary.route || 'Unassigned';
+      const subject = `Addition to Route ${routeLabel} - ${displayDate}`;
+      const textBody = formatSummaryText(summary);
+      const htmlBody = formatSummaryHtml(summary);
 
-    await sendWarehouseEmail(subject, textBody, htmlBody);
+      await sendWarehouseEmail(subject, textBody, htmlBody);
+      logger.info(`Email sent for route ${routeLabel}`);
+    }
+
     logger.info('=== AFTERNOON JOB COMPLETE ===');
   } catch (err) {
     logger.error('Afternoon job failed', { error: err });

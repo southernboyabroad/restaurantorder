@@ -45,7 +45,7 @@ describe('POST /sms webhook', () => {
   });
 
   it('returns 200 and records order for known customer with valid order', async () => {
-    mockFindCustomer.mockResolvedValue({ name: 'Alice', phone: '+15551111111' });
+    mockFindCustomer.mockResolvedValue({ name: 'Alice', phone: '+15551111111', route: '25252' });
     mockParseOrder.mockResolvedValue({ quantities: { toast: 10 }, confident: true });
 
     const res = await request(app)
@@ -76,7 +76,7 @@ describe('POST /sms webhook', () => {
   });
 
   it('asks customer to retry when order cannot be parsed', async () => {
-    mockFindCustomer.mockResolvedValue({ name: 'Bob', phone: '+15552222222' });
+    mockFindCustomer.mockResolvedValue({ name: 'Bob', phone: '+15552222222', route: '25247' });
     mockParseOrder.mockResolvedValue({ quantities: {}, confident: false });
 
     const res = await request(app)

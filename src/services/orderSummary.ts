@@ -4,14 +4,13 @@ import logger from '../logger';
 
 export interface OrderSummary {
   date: string;
+  route: string; // route number, or '' for unassigned
   totalsByProduct: Record<string, number>;
   orderCount: number;
   orders: OrderRow[];
 }
 
-export async function generateSummary(dateStr: string): Promise<OrderSummary> {
-  const orders = await getTodaysOrders(dateStr);
-
+function buildSummary(dateStr: string, route: string, orders: OrderRow[]): OrderSummary {
   const totalsByProduct: Record<string, number> = {};
   for (const product of config.products) {
     totalsByProduct[product] = 0;
@@ -23,14 +22,43 @@ export async function generateSummary(dateStr: string): Promise<OrderSummary> {
     }
   }
 
-  logger.info('Generated order summary', { date: dateStr, orderCount: orders.length, totalsByProduct });
-
   return {
     date: dateStr,
+    route,
     totalsByProduct,
     orderCount: orders.length,
     orders,
   };
+}
+
+export async function generateSummary(dateStr: string): Promise<OrderSummary> {
+  const orders = await getTodaysOrders(dateStr);
+  const summary = buildSummary(dateStr, '', orders);
+
+  logger.info('Generated order summary', { date: dateStr, orderCount: orders.length, totalsByProduct: summary.totalsByProduct });
+
+  return summary;
+}
+
+export async function generateSummariesByRoute(dateStr: string): Promise<OrderSummary[]> {
+  const orders = await getTodaysOrders(dateStr);
+
+  // Group orders by route
+  const byRoute = new Map<string, OrderRow[]>();
+  for (const order of orders) {
+    const route = order.route || '';
+    if (!byRoute.has(route)) byRoute.set(route, []);
+    byRoute.get(route)!.push(order);
+  }
+
+  const summaries: OrderSummary[] = [];
+  for (const [route, routeOrders] of byRoute) {
+    const summary = buildSummary(dateStr, route, routeOrders);
+    logger.info('Generated route summary', { date: dateStr, route: route || '(unassigned)', orderCount: routeOrders.length, totalsByProduct: summary.totalsByProduct });
+    summaries.push(summary);
+  }
+
+  return summaries;
 }
 
 export function formatSummaryText(summary: OrderSummary): string {

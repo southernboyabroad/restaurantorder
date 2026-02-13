@@ -3,20 +3,22 @@ import { config } from '../config';
 import logger from '../logger';
 
 // ── Sheet layout ────────────────────────────────────────────────
-// Sheet "Customers"  → columns: Name | Phone | Default Product (optional)
-// Sheet "Orders"     → columns: Date | Phone | Name | product1 | product2 | … | Raw Reply
+// Sheet "Customers"  → columns: Name | Phone | Default Product (optional) | Route (optional)
+// Sheet "Orders"     → columns: Date | Phone | Name | Route | product1 | product2 | … | Raw Reply
 // ────────────────────────────────────────────────────────────────
 
 export interface Customer {
   name: string;
   phone: string; // E.164 format, e.g. +15551234567
   defaultProduct?: string; // canonical product name, e.g. "4-inch"
+  route?: string; // delivery route number, e.g. "25252"
 }
 
 export interface OrderRow {
   date: string;
   phone: string;
   name: string;
+  route: string; // delivery route number
   quantities: Record<string, number>; // product → qty
   rawReply: string;
 }
@@ -44,7 +46,7 @@ export async function getCustomers(): Promise<Customer[]> {
   const sheets = getClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: config.google.sheetId,
-    range: 'Customers!A2:C', // skip header; col C = default product (optional)
+    range: 'Customers!A2:D', // skip header; col C = default product, col D = route
   });
 
   const rows = res.data.values || [];
@@ -54,6 +56,7 @@ export async function getCustomers(): Promise<Customer[]> {
       name: row[0].trim(),
       phone: row[1].trim(),
       defaultProduct: row[2]?.trim().toLowerCase() || undefined,
+      route: row[3]?.trim() || undefined,
     }));
 
   logger.info(`Loaded ${customers.length} customers from Sheets`);
@@ -64,7 +67,7 @@ export async function getCustomers(): Promise<Customer[]> {
 
 export async function ensureOrdersSheet(): Promise<void> {
   const sheets = getClient();
-  const headers = ['Date', 'Phone', 'Name', ...config.products, 'Raw Reply'];
+  const headers = ['Date', 'Phone', 'Name', 'Route', ...config.products, 'Raw Reply'];
 
   // Check if sheet exists — try to read A1
   try {
@@ -100,6 +103,7 @@ export async function appendOrder(order: OrderRow): Promise<void> {
     order.date,
     order.phone,
     order.name,
+    order.route,
     ...config.products.map((p) => order.quantities[p] ?? 0),
     order.rawReply,
   ];
@@ -130,14 +134,15 @@ export async function getTodaysOrders(dateStr: string): Promise<OrderRow[]> {
     if (row[0] !== dateStr) continue;
     const quantities: Record<string, number> = {};
     config.products.forEach((p, i) => {
-      quantities[p] = parseInt(row[3 + i] || '0', 10) || 0;
+      quantities[p] = parseInt(row[4 + i] || '0', 10) || 0;
     });
     orders.push({
       date: row[0],
       phone: row[1],
       name: row[2],
+      route: row[3] || '',
       quantities,
-      rawReply: row[3 + config.products.length] || '',
+      rawReply: row[4 + config.products.length] || '',
     });
   }
 
