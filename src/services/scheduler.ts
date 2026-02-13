@@ -15,7 +15,7 @@ function todayDisplayDate(): string {
   return `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`; // M/D/YYYY
 }
 
-// ── 8:00 AM ET — Mon, Wed, Fri — send order prompts ────────────
+// ── 9:30 AM ET — Wed, Fri, Sat — send order prompts ─────────────
 
 async function morningJob(): Promise<void> {
   logger.info('=== MORNING JOB START ===');
@@ -43,7 +43,7 @@ async function morningJob(): Promise<void> {
   }
 }
 
-// ── 2:00 PM ET — Mon, Wed, Fri — summarize + email warehouse ───
+// ── 11:30 AM ET — Wed, Fri, Sat — summarize + email warehouse ───
 
 async function afternoonJob(): Promise<void> {
   logger.info('=== AFTERNOON JOB START ===');
@@ -77,17 +77,17 @@ async function afternoonJob(): Promise<void> {
 
 export function startScheduler(): void {
   // Cron expressions use the system timezone — we set TZ=America/New_York
-  // "At 08:00 on Monday, Wednesday, and Friday"
-  cron.schedule('0 8 * * 1,3,5', () => {
+  // "At 09:30 on Wednesday, Friday, and Saturday"
+  cron.schedule('30 9 * * 3,5,6', () => {
     morningJob();
   });
 
-  // "At 14:00 on Monday, Wednesday, and Friday"
-  cron.schedule('0 14 * * 1,3,5', () => {
+  // "At 11:30 on Wednesday, Friday, and Saturday"
+  cron.schedule('30 11 * * 3,5,6', () => {
     afternoonJob();
   });
 
-  logger.info('Scheduler started — morning job at 8:00 AM, afternoon job at 2:00 PM (Mon/Wed/Fri ET)');
+  logger.info('Scheduler started — SMS at 9:30 AM, email at 11:30 AM (Wed/Fri/Sat ET)');
 }
 
 // Exported for manual triggering / testing
