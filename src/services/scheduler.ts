@@ -12,7 +12,7 @@ function todayDateStr(): string {
 
 function todayDisplayDate(): string {
   const now = new Date();
-  return `${now.getMonth() + 1}-${now.getDate()}-${now.getFullYear()}`; // M-D-YYYY
+  return `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`; // M/D/YYYY
 }
 
 // ── 8:00 AM ET — Mon, Wed, Fri — send order prompts ────────────
@@ -59,7 +59,7 @@ async function afternoonJob(): Promise<void> {
 
     for (const summary of summaries) {
       const routeLabel = summary.route || 'Unassigned';
-      const subject = `Addition to Route ${routeLabel} - ${displayDate}`;
+      const subject = `ADDITIONS to Route ${routeLabel} - ${displayDate}`;
       const textBody = formatSummaryText(summary);
       const htmlBody = formatSummaryHtml(summary);
 

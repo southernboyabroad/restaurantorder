@@ -63,65 +63,33 @@ export async function generateSummariesByRoute(dateStr: string): Promise<OrderSu
 
 export function formatSummaryText(summary: OrderSummary): string {
   const lines: string[] = [
-    `ORDER SUMMARY — ${summary.date}`,
-    `Total orders received: ${summary.orderCount}`,
+    'Please add the following and confirm:',
     '',
-    '─── TOTALS BY PRODUCT ───',
   ];
 
   for (const product of config.products) {
-    const displayName = product.replace(/_/g, ' ').toUpperCase();
     const qty = summary.totalsByProduct[product] || 0;
-    lines.push(`  ${displayName}: ${qty}`);
-  }
-
-  lines.push('', '─── INDIVIDUAL ORDERS ───');
-
-  for (const order of summary.orders) {
-    const items = config.products
-      .filter((p) => (order.quantities[p] || 0) > 0)
-      .map((p) => `${p.replace(/_/g, ' ')} ×${order.quantities[p]}`)
-      .join(', ');
-    lines.push(`  ${order.name} (${order.phone}): ${items || 'none'}`);
+    if (qty === 0) continue;
+    const displayName = product.replace(/_/g, ' ');
+    lines.push(`${qty} - ${displayName}`);
   }
 
   return lines.join('\n');
 }
 
 export function formatSummaryHtml(summary: OrderSummary): string {
-  const productRows = config.products
+  const productLines = config.products
+    .filter((p) => (summary.totalsByProduct[p] || 0) > 0)
     .map((p) => {
       const displayName = p.replace(/_/g, ' ');
-      const qty = summary.totalsByProduct[p] || 0;
-      return `<tr><td style="padding:4px 12px;text-transform:capitalize">${displayName}</td><td style="padding:4px 12px;font-weight:bold">${qty}</td></tr>`;
-    })
-    .join('\n');
-
-  const orderRows = summary.orders
-    .map((order) => {
-      const items = config.products
-        .filter((p) => (order.quantities[p] || 0) > 0)
-        .map((p) => `${p.replace(/_/g, ' ')} &times;${order.quantities[p]}`)
-        .join(', ');
-      return `<tr><td style="padding:4px 12px">${order.name}</td><td style="padding:4px 12px">${order.phone}</td><td style="padding:4px 12px">${items || 'none'}</td></tr>`;
+      const qty = summary.totalsByProduct[p];
+      return `<p style="margin:4px 0;font-size:16px"><strong>${qty}</strong> - ${displayName}</p>`;
     })
     .join('\n');
 
   return `
 <html><body style="font-family:sans-serif">
-<h2>Order Summary &mdash; ${summary.date}</h2>
-<p>Total orders received: <strong>${summary.orderCount}</strong></p>
-
-<h3>Totals by Product</h3>
-<table border="1" cellspacing="0" style="border-collapse:collapse">
-<tr style="background:#f0f0f0"><th style="padding:4px 12px">Product</th><th style="padding:4px 12px">Quantity</th></tr>
-${productRows}
-</table>
-
-<h3>Individual Orders</h3>
-<table border="1" cellspacing="0" style="border-collapse:collapse">
-<tr style="background:#f0f0f0"><th style="padding:4px 12px">Name</th><th style="padding:4px 12px">Phone</th><th style="padding:4px 12px">Items</th></tr>
-${orderRows}
-</table>
+<p>Please add the following and confirm:</p>
+${productLines}
 </body></html>`;
 }

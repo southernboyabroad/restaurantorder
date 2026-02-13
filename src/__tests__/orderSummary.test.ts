@@ -28,7 +28,7 @@ describe('generateSummary', () => {
         date: '2025-01-15',
         phone: '+15552222222',
         name: 'Bob',
-        route: '25247',
+        route: '25248',
         quantities: { toast: 5, '4-inch': 0, long: 8, institutional_sandwich: 0, dinner_rolls: 20 },
         rawReply: 'toast 5, long 8, dinner rolls 20',
       },
@@ -69,7 +69,7 @@ describe('generateSummariesByRoute', () => {
         date: '2025-01-15',
         phone: '+15552222222',
         name: 'Bob',
-        route: '25247',
+        route: '25248',
         quantities: { toast: 5, '4-inch': 0, long: 8, institutional_sandwich: 0, dinner_rolls: 20 },
         rawReply: 'toast 5, long 8, dinner rolls 20',
       },
@@ -93,11 +93,11 @@ describe('generateSummariesByRoute', () => {
     expect(route25252.totalsByProduct.toast).toBe(13);
     expect(route25252.totalsByProduct['4-inch']).toBe(5);
 
-    const route25247 = summaries.find((s) => s.route === '25247')!;
-    expect(route25247).toBeDefined();
-    expect(route25247.orderCount).toBe(1);
-    expect(route25247.totalsByProduct.toast).toBe(5);
-    expect(route25247.totalsByProduct.long).toBe(8);
+    const route25248 = summaries.find((s) => s.route === '25248')!;
+    expect(route25248).toBeDefined();
+    expect(route25248.orderCount).toBe(1);
+    expect(route25248.totalsByProduct.toast).toBe(5);
+    expect(route25248.totalsByProduct.long).toBe(8);
   });
 
   it('returns empty array when no orders exist', async () => {
@@ -128,9 +128,8 @@ describe('formatSummaryText', () => {
       ],
     });
 
-    expect(text).toContain('ORDER SUMMARY');
-    expect(text).toContain('2025-01-15');
-    expect(text).toContain('TOAST: 10');
-    expect(text).toContain('Alice');
+    expect(text).toContain('Please add the following and confirm:');
+    expect(text).toContain('10 - toast');
+    expect(text).not.toContain('4-inch'); // 0-qty products omitted
   });
 });
