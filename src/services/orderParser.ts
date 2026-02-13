@@ -7,6 +7,23 @@ export interface ParsedOrder {
   confident: boolean;
 }
 
+// ── Product aliases ─────────────────────────────────────────────
+// Maps synonym → canonical product name.
+// Keys must be lowercase. The canonical name itself is included.
+const PRODUCT_ALIASES: Record<string, string> = {
+  '4-inch': '4-inch',
+  'four-inch': '4-inch',
+  'four-inch hamburger bun': '4-inch',
+  'four-inch bun': '4-inch',
+  'bun': '4-inch',
+  'long': 'long',
+  'hot dog': 'long',
+  'institutional_sandwich': 'institutional_sandwich',
+  'institutional sandwich': 'institutional_sandwich',
+  'sandwich': 'institutional_sandwich',
+  'three-inch bun': 'institutional_sandwich',
+};
+
 // ── Strict regex parser ─────────────────────────────────────────
 // Accepts formats like:
 //   "chicken 10, ribs 5"
@@ -23,10 +40,31 @@ export function parseOrderStrict(text: string): ParsedOrder | null {
 
   const normalized = text.toLowerCase().replace(/_/g, ' ');
 
+  // Build a list of (name-to-match, canonical-product) pairs.
+  // Aliases first (longer phrases matched before shorter ones), then bare product names.
+  const namePairs: { label: string; product: string }[] = [];
+
+  // Add aliases sorted by length descending so "four-inch hamburger bun" matches before "bun"
+  const sortedAliases = Object.entries(PRODUCT_ALIASES).sort(
+    (a, b) => b[0].length - a[0].length,
+  );
+  for (const [alias, canonical] of sortedAliases) {
+    if (config.products.includes(canonical)) {
+      namePairs.push({ label: alias, product: canonical });
+    }
+  }
+
+  // Add remaining product names that have no aliases
   for (const product of config.products) {
     const displayName = product.replace(/_/g, ' ');
-    const escaped = escapeRegex(displayName);
-    // "toast 10" or "toast: 10" or "10 toast" or "4-inch 10" etc.
+    if (!namePairs.some((np) => np.label === displayName)) {
+      namePairs.push({ label: displayName, product });
+    }
+  }
+
+  for (const { label, product } of namePairs) {
+    if (quantities[product] !== undefined) continue; // already matched via a prior alias
+    const escaped = escapeRegex(label);
     const patterns = [
       new RegExp(`${escaped}\\s*[:=]?\\s*(\\d+)`, 'i'),
       new RegExp(`(\\d+)\\s+${escaped}`, 'i'),
@@ -59,6 +97,10 @@ export async function parseOrderWithAI(text: string): Promise<ParsedOrder> {
 
   const systemPrompt = `You are an order-parsing assistant. The customer texted their food order.
 Extract quantities for each product. Available products: ${config.products.join(', ')}.
+Important synonyms — always map these to the canonical product name:
+- "four-inch hamburger bun", "four-inch bun", "bun", "four-inch" → 4-inch
+- "hot dog" → long
+- "sandwich", "three-inch bun" → institutional_sandwich
 Return ONLY valid JSON in this exact format: {"quantities": {"product_name": number}, "confident": true/false}
 Set confident to false if the message is ambiguous or doesn't clearly reference any products.
 If a product isn't mentioned, omit it (don't set it to 0).`;

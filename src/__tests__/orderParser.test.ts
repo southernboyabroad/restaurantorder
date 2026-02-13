@@ -97,4 +97,56 @@ describe('parseOrderStrict', () => {
     expect(result!.quantities.toast).toBe(10);
     expect(result!.quantities.long).toBe(5);
   });
+
+  // ── Alias / synonym tests ──────────────────────────────────────
+  it('maps "bun" to 4-inch', () => {
+    const result = parseOrderStrict('bun 12');
+    expect(result).not.toBeNull();
+    expect(result!.quantities['4-inch']).toBe(12);
+  });
+
+  it('maps "four-inch bun" to 4-inch', () => {
+    const result = parseOrderStrict('four-inch bun 8');
+    expect(result).not.toBeNull();
+    expect(result!.quantities['4-inch']).toBe(8);
+  });
+
+  it('maps "four-inch hamburger bun" to 4-inch', () => {
+    const result = parseOrderStrict('four-inch hamburger bun 6');
+    expect(result).not.toBeNull();
+    expect(result!.quantities['4-inch']).toBe(6);
+  });
+
+  it('maps "four-inch" to 4-inch', () => {
+    const result = parseOrderStrict('four-inch 10');
+    expect(result).not.toBeNull();
+    expect(result!.quantities['4-inch']).toBe(10);
+  });
+
+  it('maps "hot dog" to long', () => {
+    const result = parseOrderStrict('hot dog 15');
+    expect(result).not.toBeNull();
+    expect(result!.quantities.long).toBe(15);
+  });
+
+  it('maps "sandwich" to institutional_sandwich', () => {
+    const result = parseOrderStrict('sandwich 20');
+    expect(result).not.toBeNull();
+    expect(result!.quantities.institutional_sandwich).toBe(20);
+  });
+
+  it('maps "three-inch bun" to institutional_sandwich', () => {
+    const result = parseOrderStrict('three-inch bun 7');
+    expect(result).not.toBeNull();
+    expect(result!.quantities.institutional_sandwich).toBe(7);
+  });
+
+  it('handles mixed aliases and canonical names', () => {
+    const result = parseOrderStrict('toast 10, bun 5, hot dog 8, sandwich 3');
+    expect(result).not.toBeNull();
+    expect(result!.quantities.toast).toBe(10);
+    expect(result!.quantities['4-inch']).toBe(5);
+    expect(result!.quantities.long).toBe(8);
+    expect(result!.quantities.institutional_sandwich).toBe(3);
+  });
 });
