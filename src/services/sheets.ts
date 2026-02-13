@@ -140,9 +140,19 @@ export async function getTodaysOrders(dateStr: string): Promise<OrderRow[]> {
   return orders;
 }
 
+// ── Normalize a phone string to E.164 (+1XXXXXXXXXX) ────────────
+
+function normalizePhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+  return raw.startsWith('+') ? raw : `+${raw}`;
+}
+
 // ── Look up a customer by phone ─────────────────────────────────
 
 export async function findCustomerByPhone(phone: string): Promise<Customer | undefined> {
+  const normalized = normalizePhone(phone);
   const customers = await getCustomers();
-  return customers.find((c) => c.phone === phone);
+  return customers.find((c) => normalizePhone(c.phone) === normalized);
 }
