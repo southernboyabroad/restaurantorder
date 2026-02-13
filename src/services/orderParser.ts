@@ -34,7 +34,7 @@ function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export function parseOrderStrict(text: string): ParsedOrder | null {
+export function parseOrderStrict(text: string, defaultProduct?: string): ParsedOrder | null {
   const quantities: Record<string, number> = {};
   let matchCount = 0;
 
@@ -77,6 +77,20 @@ export function parseOrderStrict(text: string): ParsedOrder | null {
         matchCount++;
         break;
       }
+    }
+  }
+
+  // If no products matched but the message is just a number (e.g. "12" or "I'll take 12"),
+  // and the customer has a default product, assume they mean that product.
+  if (matchCount === 0 && defaultProduct) {
+    const bareNumber = normalized.match(/\b(\d+)\b/);
+    if (bareNumber) {
+      quantities[defaultProduct] = parseInt(bareNumber[1], 10);
+      logger.info('Bare number matched to default product', {
+        qty: quantities[defaultProduct],
+        defaultProduct,
+      });
+      return { quantities, confident: true };
     }
   }
 
@@ -134,9 +148,9 @@ If a product isn't mentioned, omit it (don't set it to 0).`;
 
 // ── Combined parser: strict first, then AI fallback ─────────────
 
-export async function parseOrder(text: string): Promise<ParsedOrder> {
+export async function parseOrder(text: string, defaultProduct?: string): Promise<ParsedOrder> {
   // Try strict regex first (free and fast)
-  const strict = parseOrderStrict(text);
+  const strict = parseOrderStrict(text, defaultProduct);
   if (strict) {
     logger.info('Order parsed with strict parser', { result: strict });
     return strict;

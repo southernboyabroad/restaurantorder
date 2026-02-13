@@ -149,4 +149,35 @@ describe('parseOrderStrict', () => {
     expect(result!.quantities.long).toBe(8);
     expect(result!.quantities.institutional_sandwich).toBe(3);
   });
+
+  // ── Bare-number / default product tests ─────────────────────────
+  it('maps a bare number to the default product', () => {
+    const result = parseOrderStrict('12', '4-inch');
+    expect(result).not.toBeNull();
+    expect(result!.quantities['4-inch']).toBe(12);
+    expect(result!.confident).toBe(true);
+  });
+
+  it('maps a bare number in conversational text to the default product', () => {
+    const result = parseOrderStrict("I'll take 12", '4-inch');
+    expect(result).not.toBeNull();
+    expect(result!.quantities['4-inch']).toBe(12);
+  });
+
+  it('does NOT use default product when a product name is explicitly given', () => {
+    const result = parseOrderStrict('toast 10', '4-inch');
+    expect(result).not.toBeNull();
+    expect(result!.quantities.toast).toBe(10);
+    expect(result!.quantities['4-inch']).toBeUndefined();
+  });
+
+  it('returns null for bare number when no default product is set', () => {
+    const result = parseOrderStrict('12');
+    expect(result).toBeNull();
+  });
+
+  it('returns null for non-numeric text even with a default product', () => {
+    const result = parseOrderStrict('hello', '4-inch');
+    expect(result).toBeNull();
+  });
 });

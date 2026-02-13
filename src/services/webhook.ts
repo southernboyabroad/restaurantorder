@@ -49,8 +49,8 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       return;
     }
 
-    // Parse the order
-    const parsed = await parseOrder(body);
+    // Parse the order (pass default product so bare numbers like "12" work)
+    const parsed = await parseOrder(body, customer.defaultProduct);
 
     const hasItems = Object.values(parsed.quantities).some((qty) => qty > 0);
 

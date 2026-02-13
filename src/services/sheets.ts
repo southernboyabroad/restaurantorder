@@ -3,13 +3,14 @@ import { config } from '../config';
 import logger from '../logger';
 
 // ── Sheet layout ────────────────────────────────────────────────
-// Sheet "Customers"  → columns: Name | Phone
+// Sheet "Customers"  → columns: Name | Phone | Default Product (optional)
 // Sheet "Orders"     → columns: Date | Phone | Name | product1 | product2 | … | Raw Reply
 // ────────────────────────────────────────────────────────────────
 
 export interface Customer {
   name: string;
   phone: string; // E.164 format, e.g. +15551234567
+  defaultProduct?: string; // canonical product name, e.g. "4-inch"
 }
 
 export interface OrderRow {
@@ -43,13 +44,17 @@ export async function getCustomers(): Promise<Customer[]> {
   const sheets = getClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: config.google.sheetId,
-    range: 'Customers!A2:B', // skip header
+    range: 'Customers!A2:C', // skip header; col C = default product (optional)
   });
 
   const rows = res.data.values || [];
   const customers: Customer[] = rows
     .filter((row) => row[0] && row[1])
-    .map((row) => ({ name: row[0].trim(), phone: row[1].trim() }));
+    .map((row) => ({
+      name: row[0].trim(),
+      phone: row[1].trim(),
+      defaultProduct: row[2]?.trim().toLowerCase() || undefined,
+    }));
 
   logger.info(`Loaded ${customers.length} customers from Sheets`);
   return customers;
