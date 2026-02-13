@@ -26,6 +26,7 @@ export const config = {
   google: {
     serviceAccountKeyBase64: required('GOOGLE_SERVICE_ACCOUNT_KEY_BASE64'),
     sheetId: required('GOOGLE_SHEET_ID'),
+    deliverySheetId: required('DELIVERY_SHEET_ID'),
   },
 
   sendgrid: {

@@ -60,7 +60,7 @@ async function getSheetIdByName(
   tabName: string,
 ): Promise<number | null> {
   const spreadsheet = await sheets.spreadsheets.get({
-    spreadsheetId: config.google.sheetId,
+    spreadsheetId: config.google.deliverySheetId,
     fields: 'sheets.properties',
   });
   const sheet = spreadsheet.data.sheets?.find(
@@ -109,7 +109,7 @@ export async function ensureDeliveryTab(deliveryDate?: Date): Promise<void> {
 
   // Create the sheet
   const addResult = await sheets.spreadsheets.batchUpdate({
-    spreadsheetId: config.google.sheetId,
+    spreadsheetId: config.google.deliverySheetId,
     requestBody: {
       requests: [{ addSheet: { properties: { title: tabName } } }],
     },
@@ -166,7 +166,7 @@ export async function ensureDeliveryTab(deliveryDate?: Date): Promise<void> {
 
   // Write all values (USER_ENTERED so SUM formulas are evaluated)
   await sheets.spreadsheets.values.update({
-    spreadsheetId: config.google.sheetId,
+    spreadsheetId: config.google.deliverySheetId,
     range: `'${tabName}'!A1`,
     valueInputOption: 'USER_ENTERED',
     requestBody: { values: rows },
@@ -218,7 +218,7 @@ async function formatDeliveryTab(
 
   if (requests.length > 0) {
     await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: config.google.sheetId,
+      spreadsheetId: config.google.deliverySheetId,
       requestBody: { requests },
     });
   }
@@ -249,7 +249,7 @@ export async function updateDeliveryTabOrder(
 
   // Read column A to find the customer's row
   const colARes = await sheets.spreadsheets.values.get({
-    spreadsheetId: config.google.sheetId,
+    spreadsheetId: config.google.deliverySheetId,
     range: `'${tabName}'!A:A`,
   });
 
@@ -267,7 +267,7 @@ export async function updateDeliveryTabOrder(
 
   // Read header row to map product names → column indices
   const headerRes = await sheets.spreadsheets.values.get({
-    spreadsheetId: config.google.sheetId,
+    spreadsheetId: config.google.deliverySheetId,
     range: `'${tabName}'!1:1`,
   });
 
@@ -302,7 +302,7 @@ export async function updateDeliveryTabOrder(
   }));
 
   await sheets.spreadsheets.values.batchUpdate({
-    spreadsheetId: config.google.sheetId,
+    spreadsheetId: config.google.deliverySheetId,
     requestBody: {
       valueInputOption: 'RAW',
       data: valueUpdates,
@@ -329,7 +329,7 @@ export async function updateDeliveryTabOrder(
   }));
 
   await sheets.spreadsheets.batchUpdate({
-    spreadsheetId: config.google.sheetId,
+    spreadsheetId: config.google.deliverySheetId,
     requestBody: { requests: formatRequests },
   });
 
