@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { getCustomers } from './sheets';
+import { getCustomers, getTodaysOrders } from './sheets';
 import { sendSms, buildOrderPromptMessage } from './sms';
 import { generateSummariesByRoute, formatSummaryText, formatSummaryHtml } from './orderSummary';
 import { sendWarehouseEmail } from './email';
@@ -43,6 +43,41 @@ async function morningJob(): Promise<void> {
   }
 }
 
+// ── 10:30 AM ET — Wed, Fri, Sat — reminder for non-responders ────
+
+async function reminderJob(): Promise<void> {
+  logger.info('=== REMINDER JOB START ===');
+  try {
+    const dateStr = todayDateStr();
+    const customers = await getCustomers();
+    const orders = await getTodaysOrders(dateStr);
+
+    // Collect customer names that have already ordered today
+    const orderedNames = new Set(orders.map((o) => o.name.toLowerCase()));
+
+    // Find customers who haven't ordered — dedupe by name so each
+    // restaurant only gets one reminder per phone number
+    const needsReminder = customers.filter(
+      (c) => !orderedNames.has(c.name.toLowerCase()),
+    );
+
+    if (needsReminder.length === 0) {
+      logger.info('All customers have ordered — no reminders needed');
+      return;
+    }
+
+    const results = await Promise.allSettled(
+      needsReminder.map((c) => sendSms(c.phone, 'Reminder')),
+    );
+
+    const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    logger.info(`Reminder SMS complete: ${succeeded} sent, ${failed} failed`);
+  } catch (err) {
+    logger.error('Reminder job failed', { error: err });
+  }
+}
+
 // ── 11:30 AM ET — Wed, Fri, Sat — summarize + email warehouse ───
 
 async function afternoonJob(): Promise<void> {
@@ -82,13 +117,18 @@ export function startScheduler(): void {
     morningJob();
   });
 
+  // "At 10:30 on Wednesday, Friday, and Saturday"
+  cron.schedule('30 10 * * 3,5,6', () => {
+    reminderJob();
+  });
+
   // "At 11:30 on Wednesday, Friday, and Saturday"
   cron.schedule('30 11 * * 3,5,6', () => {
     afternoonJob();
   });
 
-  logger.info('Scheduler started — SMS at 9:30 AM, email at 11:30 AM (Wed/Fri/Sat ET)');
+  logger.info('Scheduler started — SMS at 9:30 AM, reminder at 10:30 AM, email at 11:30 AM (Wed/Fri/Sat ET)');
 }
 
 // Exported for manual triggering / testing
-export { morningJob, afternoonJob };
+export { morningJob, reminderJob, afternoonJob };
