@@ -5,6 +5,7 @@ import { generateSummariesByRoute, formatSummaryText, formatSummaryHtml } from '
 import { sendWarehouseEmail } from './email';
 import { ensureOrdersSheet } from './sheets';
 import { ensureDeliveryTab } from './deliveryTab';
+import { config } from '../config';
 import logger from '../logger';
 
 function todayDateStr(): string {
@@ -19,6 +20,10 @@ function todayDisplayDate(): string {
 // ── 9:30 AM ET — Wed, Fri, Sat — send order prompts ─────────────
 
 async function morningJob(): Promise<void> {
+  if (!config.schedulerEnabled) {
+    logger.info('Scheduler disabled — skipping morning job');
+    return;
+  }
   logger.info('=== MORNING JOB START ===');
   try {
     await ensureOrdersSheet();
@@ -54,6 +59,10 @@ async function morningJob(): Promise<void> {
 // ── 10:30 AM ET — Wed, Fri, Sat — reminder for non-responders ────
 
 async function reminderJob(): Promise<void> {
+  if (!config.schedulerEnabled) {
+    logger.info('Scheduler disabled — skipping reminder job');
+    return;
+  }
   logger.info('=== REMINDER JOB START ===');
   try {
     const dateStr = todayDateStr();
@@ -89,6 +98,10 @@ async function reminderJob(): Promise<void> {
 // ── 11:30 AM ET — Wed, Fri, Sat — summarize + email warehouse ───
 
 async function afternoonJob(): Promise<void> {
+  if (!config.schedulerEnabled) {
+    logger.info('Scheduler disabled — skipping afternoon job');
+    return;
+  }
   logger.info('=== AFTERNOON JOB START ===');
   try {
     const dateStr = todayDateStr();
@@ -135,7 +148,11 @@ export function startScheduler(): void {
     afternoonJob();
   });
 
-  logger.info('Scheduler started — SMS at 9:30 AM, reminder at 10:30 AM, email at 11:30 AM (Wed/Fri/Sat ET)');
+  if (config.schedulerEnabled) {
+    logger.info('Scheduler ENABLED — SMS at 9:30 AM, reminder at 10:30 AM, email at 11:30 AM (Wed/Fri/Sat ET)');
+  } else {
+    logger.info('Scheduler DISABLED — cron jobs registered but will not run. Set SCHEDULER_ENABLED=true to activate.');
+  }
 }
 
 // Exported for manual triggering / testing

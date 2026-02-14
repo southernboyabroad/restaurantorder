@@ -108,5 +108,9 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
 
 // Health check
 webhookRouter.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    schedulerEnabled: config.schedulerEnabled,
+    timestamp: new Date().toISOString(),
+  });
 });
