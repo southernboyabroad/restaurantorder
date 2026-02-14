@@ -41,16 +41,24 @@ async function morningJob(): Promise<void> {
       return;
     }
 
-    const results = await Promise.allSettled(
-      customers.map(async (c) => {
-        const message = buildOrderPromptMessage(c.name);
-        return sendSms(c.phone, message);
-      }),
-    );
+    // In test mode, only send to the test phone number
+    if (config.testPhoneNumber) {
+      logger.info(`TEST MODE — sending only to ${config.testPhoneNumber}`);
+      const message = buildOrderPromptMessage('Test Customer');
+      await sendSms(config.testPhoneNumber, message);
+      logger.info('Morning SMS test complete: 1 sent to test number');
+    } else {
+      const results = await Promise.allSettled(
+        customers.map(async (c) => {
+          const message = buildOrderPromptMessage(c.name);
+          return sendSms(c.phone, message);
+        }),
+      );
 
-    const succeeded = results.filter((r) => r.status === 'fulfilled').length;
-    const failed = results.filter((r) => r.status === 'rejected').length;
-    logger.info(`Morning SMS blast complete: ${succeeded} sent, ${failed} failed`);
+      const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      logger.info(`Morning SMS blast complete: ${succeeded} sent, ${failed} failed`);
+    }
   } catch (err) {
     logger.error('Morning job failed', { error: err });
   }
@@ -83,13 +91,20 @@ async function reminderJob(): Promise<void> {
       return;
     }
 
-    const results = await Promise.allSettled(
-      needsReminder.map((c) => sendSms(c.phone, 'Reminder')),
-    );
+    // In test mode, only send to the test phone number
+    if (config.testPhoneNumber) {
+      logger.info(`TEST MODE — sending reminder only to ${config.testPhoneNumber}`);
+      await sendSms(config.testPhoneNumber, 'Reminder');
+      logger.info('Reminder SMS test complete: 1 sent to test number');
+    } else {
+      const results = await Promise.allSettled(
+        needsReminder.map((c) => sendSms(c.phone, 'Reminder')),
+      );
 
-    const succeeded = results.filter((r) => r.status === 'fulfilled').length;
-    const failed = results.filter((r) => r.status === 'rejected').length;
-    logger.info(`Reminder SMS complete: ${succeeded} sent, ${failed} failed`);
+      const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      logger.info(`Reminder SMS complete: ${succeeded} sent, ${failed} failed`);
+    }
   } catch (err) {
     logger.error('Reminder job failed', { error: err });
   }
@@ -149,7 +164,11 @@ export function startScheduler(): void {
   });
 
   if (config.schedulerEnabled) {
-    logger.info('Scheduler ENABLED — SMS at 9:30 AM, reminder at 10:30 AM, email at 11:30 AM (Wed/Fri/Sat ET)');
+    if (config.testPhoneNumber) {
+      logger.info(`Scheduler ENABLED (TEST MODE) — SMS will only go to ${config.testPhoneNumber}`);
+    } else {
+      logger.info('Scheduler ENABLED — SMS at 9:30 AM, reminder at 10:30 AM, email at 11:30 AM (Wed/Fri/Sat ET)');
+    }
   } else {
     logger.info('Scheduler DISABLED — cron jobs registered but will not run. Set SCHEDULER_ENABLED=true to activate.');
   }

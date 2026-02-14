@@ -17,6 +17,7 @@ export const config = {
   port: parseInt(optional('PORT', '3000'), 10),
   logLevel: optional('LOG_LEVEL', 'info'),
   schedulerEnabled: optional('SCHEDULER_ENABLED', 'false').toLowerCase() === 'true',
+  testPhoneNumber: optional('TEST_PHONE_NUMBER', ''),
 
   twilio: {
     accountSid: required('TWILIO_ACCOUNT_SID'),
