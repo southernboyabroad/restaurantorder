@@ -235,4 +235,39 @@ describe('parseOrderStrict', () => {
     expect(result).not.toBeNull();
     expect(result!.quantities.toast).toBe(10);
   });
+
+  // ── Alias accumulation tests ──────────────────────────────────
+  it('accumulates "hot dogs" and "long rolls" into a single long total', () => {
+    const result = parseOrderStrict(
+      'I need to get four hot dogs and maybe give me three 4-in and 15 long rolls and 12 sandwich',
+    );
+    expect(result).not.toBeNull();
+    expect(result!.quantities.long).toBe(19);               // 4 hot dogs + 15 long rolls
+    expect(result!.quantities['4-inch']).toBe(3);            // three 4-in
+    expect(result!.quantities.institutional_sandwich).toBe(12);
+  });
+
+  it('maps "4-in" to 4-inch', () => {
+    const result = parseOrderStrict('5 4-in');
+    expect(result).not.toBeNull();
+    expect(result!.quantities['4-inch']).toBe(5);
+  });
+
+  it('maps "long rolls" to long', () => {
+    const result = parseOrderStrict('20 long rolls');
+    expect(result).not.toBeNull();
+    expect(result!.quantities.long).toBe(20);
+  });
+
+  it('maps "hot dogs" (plural) to long', () => {
+    const result = parseOrderStrict('6 hot dogs');
+    expect(result).not.toBeNull();
+    expect(result!.quantities.long).toBe(6);
+  });
+
+  it('accumulates buns + 4-inch into one total', () => {
+    const result = parseOrderStrict('3 buns and 5 4-inch');
+    expect(result).not.toBeNull();
+    expect(result!.quantities['4-inch']).toBe(8);  // 3 + 5
+  });
 });

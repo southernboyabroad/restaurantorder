@@ -12,15 +12,22 @@ export interface ParsedOrder {
 // Keys must be lowercase. The canonical name itself is included.
 const PRODUCT_ALIASES: Record<string, string> = {
   '4-inch': '4-inch',
+  '4-in': '4-inch',
   'four-inch': '4-inch',
   'four-inch hamburger bun': '4-inch',
   'four-inch bun': '4-inch',
+  'four inch': '4-inch',
   'bun': '4-inch',
+  'buns': '4-inch',
   'long': 'long',
+  'long roll': 'long',
+  'long rolls': 'long',
   'hot dog': 'long',
+  'hot dogs': 'long',
   'institutional_sandwich': 'institutional_sandwich',
   'institutional sandwich': 'institutional_sandwich',
   'sandwich': 'institutional_sandwich',
+  'sandwiches': 'institutional_sandwich',
   'three-inch bun': 'institutional_sandwich',
 };
 
@@ -112,41 +119,53 @@ export function parseOrderStrict(text: string, defaultProduct?: string): ParsedO
     }
   }
 
+  // Track which regions of the text have already been matched so we don't
+  // double-count the same substring via a different alias.
+  const matchedRegions: { start: number; end: number }[] = [];
+
+  function overlapsExisting(start: number, end: number): boolean {
+    return matchedRegions.some((r) => start < r.end && end > r.start);
+  }
+
   // Pass 1: strict patterns — no comma tolerance, handles standard formats like
-  // "toast 10, long 5" and "10 toast, 5 long" without cross-matching.
+  // "toast 10, long 5" and "10 toast, 5 long".
+  // Accumulates quantities when different aliases for the same product appear
+  // (e.g. "4 hot dogs and 15 long rolls" → long = 19).
   for (const { label, product } of namePairs) {
-    if (quantities[product] !== undefined) continue;
     const escaped = escapeRegex(label);
     const patterns = [
-      new RegExp(`(\\d+)\\s+${escaped}`, 'i'),        // "10 toast"
-      new RegExp(`${escaped}\\s*[:=]?\\s*(\\d+)`, 'i'), // "toast 10" or "toast: 10"
+      new RegExp(`(\\d+)\\s+${escaped}\\b`, 'gi'),        // "10 toast"
+      new RegExp(`${escaped}\\s*[:=]?\\s*(\\d+)`, 'gi'),   // "toast 10" or "toast: 10"
     ];
     for (const pattern of patterns) {
-      const match = normalized.match(pattern);
-      if (match) {
-        quantities[product] = parseInt(match[1], 10);
+      let m: RegExpExecArray | null;
+      while ((m = pattern.exec(normalized)) !== null) {
+        if (overlapsExisting(m.index, m.index + m[0].length)) continue;
+        const qty = parseInt(m[1], 10);
+        quantities[product] = (quantities[product] || 0) + qty;
+        matchedRegions.push({ start: m.index, end: m.index + m[0].length });
         matchCount++;
-        break;
       }
     }
   }
 
-  // Pass 2: comma-tolerant patterns for products not yet matched.
+  // Pass 2: comma-tolerant patterns for products not yet matched at all.
   // Handles casual formats like "6, 4-inch" or "toast, 10" where a comma
   // sits between the number and product name.
   for (const { label, product } of namePairs) {
-    if (quantities[product] !== undefined) continue;
     const escaped = escapeRegex(label);
     const patterns = [
-      new RegExp(`(\\d+),\\s*${escaped}`, 'i'),        // "6, 4-inch"
-      new RegExp(`${escaped},\\s*(\\d+)`, 'i'),         // "toast, 10"
+      new RegExp(`(\\d+),\\s*${escaped}\\b`, 'gi'),        // "6, 4-inch"
+      new RegExp(`${escaped},\\s*(\\d+)`, 'gi'),            // "toast, 10"
     ];
     for (const pattern of patterns) {
-      const match = normalized.match(pattern);
-      if (match) {
-        quantities[product] = parseInt(match[1], 10);
+      let m: RegExpExecArray | null;
+      while ((m = pattern.exec(normalized)) !== null) {
+        if (overlapsExisting(m.index, m.index + m[0].length)) continue;
+        const qty = parseInt(m[1], 10);
+        quantities[product] = (quantities[product] || 0) + qty;
+        matchedRegions.push({ start: m.index, end: m.index + m[0].length });
         matchCount++;
-        break;
       }
     }
   }
