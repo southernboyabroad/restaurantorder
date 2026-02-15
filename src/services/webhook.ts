@@ -1,11 +1,11 @@
 import express, { Request, Response } from 'express';
 import { config } from '../config';
 import { validateTwilioWebhook } from './sms';
-import { findCustomerByPhone, appendOrder, hasBatchBeenSent, markOrdersAsEmailed } from './sheets';
+import { findCustomerByPhone, appendOrder, markOrdersAsEmailed } from './sheets';
 import { parseOrder } from './orderParser';
 import { sendSms } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
-import { generateSummariesByRoute, formatSummaryText, formatSummaryHtml, formatOrderText, formatOrderHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
+import { formatOrderText, formatOrderHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
 import { sendWarehouseEmail } from './email';
 import logger from '../logger';
 
@@ -88,27 +88,21 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       // Non-fatal — the flat Orders sheet already has the order
     }
 
-    // ── If the batch email already went out today, send this late order immediately ──
+    // ── Send warehouse email immediately for THIS order only ──
     try {
-      const batchSent = await hasBatchBeenSent(dateStr);
-      if (batchSent) {
-        const delivery = getDeliveryDate();
-        const deliveryDateStr = formatDeliveryDate(delivery);
-        const dayName = deliveryDayName(delivery);
-        const routeLabel = customer.route || 'Unassigned';
-        const subject = `ADDITIONS to Route ${routeLabel}- ${deliveryDateStr}`;
-        const textBody = formatOrderText(parsed.quantities, dayName);
-        const htmlBody = formatOrderHtml(parsed.quantities, dayName);
+      const delivery = getDeliveryDate();
+      const deliveryDateStr = formatDeliveryDate(delivery);
+      const dayName = deliveryDayName(delivery);
+      const routeLabel = customer.route || 'Unassigned';
+      const subject = `ADDITIONS to Route ${routeLabel}- ${deliveryDateStr}`;
+      const textBody = formatOrderText(parsed.quantities, dayName);
+      const htmlBody = formatOrderHtml(parsed.quantities, dayName);
 
-        await sendWarehouseEmail(subject, textBody, htmlBody);
-        // Mark this late order as emailed too
-        await markOrdersAsEmailed(dateStr);
-        logger.info('Late order email sent to warehouse', { customer: customer.name, route: routeLabel });
-      } else {
-        logger.info('Order recorded — batch email not yet sent, will be included in batch', { customer: customer.name });
-      }
+      await sendWarehouseEmail(subject, textBody, htmlBody);
+      await markOrdersAsEmailed(dateStr);
+      logger.info('Warehouse email sent for order', { customer: customer.name, route: routeLabel });
     } catch (emailErr) {
-      logger.error('Failed to send warehouse email for late order', { error: emailErr, customer: customer.name });
+      logger.error('Failed to send warehouse email for order', { error: emailErr, customer: customer.name });
       // Non-fatal — the order is still recorded in the sheet
     }
 
@@ -133,9 +127,9 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
   }
 });
 
-// ── Manual trigger: send warehouse email now ────────────────────
+// ── Manual trigger: re-send any un-emailed orders ───────────────
 // GET /trigger-email  (optionally pass ?date=2026-02-15)
-// Just visit this URL in your browser to fire off the warehouse email.
+// Sends individual emails for orders not yet emailed (safety net).
 webhookRouter.get('/trigger-email', async (req: Request, res: Response) => {
   try {
     const dateStr = (req.query.date as string) || new Date().toISOString().slice(0, 10);
@@ -143,33 +137,33 @@ webhookRouter.get('/trigger-email', async (req: Request, res: Response) => {
     const deliveryDateStr = formatDeliveryDate(delivery);
     const dayName = deliveryDayName(delivery);
 
-    const summaries = await generateSummariesByRoute(dateStr);
+    const { getTodaysOrders } = await import('./sheets');
+    const orders = await getTodaysOrders(dateStr);
+    const unsent = orders.filter((o) => !o.emailed);
 
-    if (summaries.length === 0) {
-      res.json({ status: 'no_orders', message: `No orders found for ${dateStr}` });
+    if (unsent.length === 0) {
+      res.json({ status: 'no_unsent', message: `No un-emailed orders for ${dateStr} (${orders.length} total already sent)` });
       return;
     }
 
-    // Send one cumulative email per route (same as the 11:30 batch)
-    const sent: string[] = [];
-    for (const summary of summaries) {
-      const routeLabel = summary.route || 'Unassigned';
+    // Send one email per individual order — never cumulate
+    let emailCount = 0;
+    for (const order of unsent) {
+      const routeLabel = order.route || 'Unassigned';
       const subject = `ADDITIONS to Route ${routeLabel}- ${deliveryDateStr}`;
-      const textBody = formatSummaryText(summary, dayName);
-      const htmlBody = formatSummaryHtml(summary, dayName);
+      const textBody = formatOrderText(order.quantities, dayName);
+      const htmlBody = formatOrderHtml(order.quantities, dayName);
 
       await sendWarehouseEmail(subject, textBody, htmlBody);
-      sent.push(routeLabel);
-      logger.info(`Manual trigger: email sent for route ${routeLabel}`);
+      emailCount++;
+      logger.info(`Manual trigger: email sent for ${order.name} on route ${routeLabel}`);
     }
 
-    // Mark all orders as emailed so late orders get sent individually
     await markOrdersAsEmailed(dateStr);
 
-    res.json({ status: 'sent', date: dateStr, deliveryDate: deliveryDateStr, routes: sent });
+    res.json({ status: 'sent', date: dateStr, deliveryDate: deliveryDateStr, emailsSent: emailCount });
   } catch (err: any) {
     logger.error('Manual email trigger failed', { error: err });
-    // Show the actual error so we can diagnose SendGrid issues
     const detail = err?.response?.body?.errors?.[0]?.message
       || err?.message
       || 'Unknown error';

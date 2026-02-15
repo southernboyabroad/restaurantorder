@@ -25,7 +25,6 @@ jest.mock('../services/sheets', () => ({
   findCustomerByPhone: jest.fn(),
   appendOrder: jest.fn().mockResolvedValue(undefined),
   getTodaysOrders: jest.fn().mockResolvedValue([]),
-  hasBatchBeenSent: jest.fn().mockResolvedValue(false),
   markOrdersAsEmailed: jest.fn().mockResolvedValue(undefined),
 }));
 

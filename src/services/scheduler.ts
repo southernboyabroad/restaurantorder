@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { getCustomers, getTodaysOrders, markOrdersAsEmailed } from './sheets';
 import { sendSms, buildOrderPromptMessage } from './sms';
-import { generateSummariesByRoute, formatSummaryText, formatSummaryHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
+import { formatOrderText, formatOrderHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
 import { sendWarehouseEmail } from './email';
 import { ensureOrdersSheet } from './sheets';
 import { ensureDeliveryTab } from './deliveryTab';
@@ -118,24 +118,27 @@ async function afternoonJob(): Promise<void> {
     const delivery = getDeliveryDate();
     const deliveryDateStr = formatDeliveryDate(delivery);
     const dayName = deliveryDayName(delivery);
-    const summaries = await generateSummariesByRoute(dateStr);
+    const orders = await getTodaysOrders(dateStr);
 
-    if (summaries.length === 0) {
-      logger.warn('No orders found today — skipping email');
+    // Only send emails for orders that weren't already emailed on SMS receipt
+    const unsent = orders.filter((o) => !o.emailed);
+
+    if (unsent.length === 0) {
+      logger.info('All orders already emailed — nothing to catch up');
       return;
     }
 
-    for (const summary of summaries) {
-      const routeLabel = summary.route || 'Unassigned';
+    // Send one email per individual order — never cumulate
+    for (const order of unsent) {
+      const routeLabel = order.route || 'Unassigned';
       const subject = `ADDITIONS to Route ${routeLabel}- ${deliveryDateStr}`;
-      const textBody = formatSummaryText(summary, dayName);
-      const htmlBody = formatSummaryHtml(summary, dayName);
+      const textBody = formatOrderText(order.quantities, dayName);
+      const htmlBody = formatOrderHtml(order.quantities, dayName);
 
       await sendWarehouseEmail(subject, textBody, htmlBody);
-      logger.info(`Email sent for route ${routeLabel}`);
+      logger.info(`Catch-up email sent for ${order.name} on route ${routeLabel}`);
     }
 
-    // Mark all orders as emailed so late orders trigger individual emails
     await markOrdersAsEmailed(dateStr);
 
     logger.info('=== AFTERNOON JOB COMPLETE ===');
