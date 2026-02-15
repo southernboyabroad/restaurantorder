@@ -138,9 +138,13 @@ webhookRouter.get('/trigger-email', async (req: Request, res: Response) => {
     }
 
     res.json({ status: 'sent', date: dateStr, deliveryDate: deliveryDateStr, routes: sent });
-  } catch (err) {
+  } catch (err: any) {
     logger.error('Manual email trigger failed', { error: err });
-    res.status(500).json({ status: 'error', message: 'Failed to send email' });
+    // Show the actual error so we can diagnose SendGrid issues
+    const detail = err?.response?.body?.errors?.[0]?.message
+      || err?.message
+      || 'Unknown error';
+    res.status(500).json({ status: 'error', message: 'Failed to send email', detail });
   }
 });
 
