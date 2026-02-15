@@ -24,11 +24,60 @@ const PRODUCT_ALIASES: Record<string, string> = {
   'three-inch bun': 'institutional_sandwich',
 };
 
+// ── Word-number conversion ──────────────────────────────────────
+// Converts spoken/typed number words into digits so the regex parser
+// can handle casual messages like "five toast, two long".
+
+const WORD_NUMBERS: Record<string, string> = {
+  zero: '0', one: '1', two: '2', three: '3', four: '4',
+  five: '5', six: '6', seven: '7', eight: '8', nine: '9',
+  ten: '10', eleven: '11', twelve: '12', thirteen: '13',
+  fourteen: '14', fifteen: '15', sixteen: '16', seventeen: '17',
+  eighteen: '18', nineteen: '19', twenty: '20', thirty: '30',
+  forty: '40', fifty: '50', sixty: '60', seventy: '70',
+  eighty: '80', ninety: '90', hundred: '100',
+  // Common misspellings / voice-to-text quirks
+  too: '2', to: '2', for: '4', fore: '4', ate: '8',
+};
+
+// Compound numbers like "twenty five" → "25"
+const COMPOUND_PATTERN = /\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)[- ]?(one|two|three|four|five|six|seven|eight|nine)\b/gi;
+
+function wordsToDigits(text: string): string {
+  // First handle compound numbers ("twenty five" → "25")
+  let result = text.replace(COMPOUND_PATTERN, (_match, tens, ones) => {
+    const t = parseInt(WORD_NUMBERS[tens.toLowerCase()] || '0', 10);
+    const o = parseInt(WORD_NUMBERS[ones.toLowerCase()] || '0', 10);
+    return String(t + o);
+  });
+
+  // Then handle standalone word-numbers.
+  // Use word boundaries, but be careful with "to" and "for" — only convert them
+  // when they appear right next to a product name (handled by context in the regex step).
+  // For the safe words (not ambiguous), convert them directly.
+  const safeWords = { ...WORD_NUMBERS };
+  // "to", "for", "ate" are too ambiguous on their own — only "too" near a product is converted
+  delete safeWords.to;
+  delete safeWords.for;
+  delete safeWords.fore;
+  delete safeWords.ate;
+
+  // Replace safe word-numbers with digits, but NOT when they're part of a
+  // hyphenated product name like "three-inch" or "four-inch"
+  for (const [word, digit] of Object.entries(safeWords)) {
+    const pattern = new RegExp(`\\b${word}\\b(?!-)`, 'gi');
+    result = result.replace(pattern, digit);
+  }
+
+  return result;
+}
+
 // ── Strict regex parser ─────────────────────────────────────────
 // Accepts formats like:
 //   "chicken 10, ribs 5"
 //   "10 chicken, 5 ribs"
 //   "chicken: 10 | ribs: 5"
+//   "Thank you, can I get 5 toast, 6 4-inch, two long"
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -38,7 +87,8 @@ export function parseOrderStrict(text: string, defaultProduct?: string): ParsedO
   const quantities: Record<string, number> = {};
   let matchCount = 0;
 
-  const normalized = text.toLowerCase().replace(/_/g, ' ');
+  // Normalize: lowercase, underscores to spaces, then convert word-numbers to digits
+  const normalized = wordsToDigits(text.toLowerCase().replace(/_/g, ' '));
 
   // Build a list of (name-to-match, canonical-product) pairs.
   // Aliases first (longer phrases matched before shorter ones), then bare product names.
@@ -62,14 +112,35 @@ export function parseOrderStrict(text: string, defaultProduct?: string): ParsedO
     }
   }
 
+  // Pass 1: strict patterns — no comma tolerance, handles standard formats like
+  // "toast 10, long 5" and "10 toast, 5 long" without cross-matching.
   for (const { label, product } of namePairs) {
-    if (quantities[product] !== undefined) continue; // already matched via a prior alias
+    if (quantities[product] !== undefined) continue;
     const escaped = escapeRegex(label);
     const patterns = [
-      new RegExp(`${escaped}\\s*[:=]?\\s*(\\d+)`, 'i'),
-      new RegExp(`(\\d+)\\s+${escaped}`, 'i'),
+      new RegExp(`(\\d+)\\s+${escaped}`, 'i'),        // "10 toast"
+      new RegExp(`${escaped}\\s*[:=]?\\s*(\\d+)`, 'i'), // "toast 10" or "toast: 10"
     ];
+    for (const pattern of patterns) {
+      const match = normalized.match(pattern);
+      if (match) {
+        quantities[product] = parseInt(match[1], 10);
+        matchCount++;
+        break;
+      }
+    }
+  }
 
+  // Pass 2: comma-tolerant patterns for products not yet matched.
+  // Handles casual formats like "6, 4-inch" or "toast, 10" where a comma
+  // sits between the number and product name.
+  for (const { label, product } of namePairs) {
+    if (quantities[product] !== undefined) continue;
+    const escaped = escapeRegex(label);
+    const patterns = [
+      new RegExp(`(\\d+),\\s*${escaped}`, 'i'),        // "6, 4-inch"
+      new RegExp(`${escaped},\\s*(\\d+)`, 'i'),         // "toast, 10"
+    ];
     for (const pattern of patterns) {
       const match = normalized.match(pattern);
       if (match) {

@@ -180,4 +180,59 @@ describe('parseOrderStrict', () => {
     const result = parseOrderStrict('hello', '4-inch');
     expect(result).toBeNull();
   });
+
+  // ── Casual / natural language tests ─────────────────────────────
+  it('handles comma between number and product: "6, 4-inch"', () => {
+    const result = parseOrderStrict('6, 4-inch');
+    expect(result).not.toBeNull();
+    expect(result!.quantities['4-inch']).toBe(6);
+  });
+
+  it('handles word numbers like "five toast, six long"', () => {
+    const result = parseOrderStrict('five toast, six long');
+    expect(result).not.toBeNull();
+    expect(result!.quantities.toast).toBe(5);
+    expect(result!.quantities.long).toBe(6);
+  });
+
+  it('handles "too" as "two" — "too long" → long: 2', () => {
+    const result = parseOrderStrict('too long');
+    expect(result).not.toBeNull();
+    expect(result!.quantities.long).toBe(2);
+  });
+
+  it('handles the real-world message: "Thank you, can I get 5 toast, 6, 4-inch, too long?"', () => {
+    const result = parseOrderStrict('Thank you, can I get 5 toast, 6, 4-inch, too long?');
+    expect(result).not.toBeNull();
+    expect(result!.quantities.toast).toBe(5);
+    expect(result!.quantities['4-inch']).toBe(6);
+    expect(result!.quantities.long).toBe(2);
+  });
+
+  it('handles compound word numbers like "twenty five toast"', () => {
+    const result = parseOrderStrict('twenty five toast');
+    expect(result).not.toBeNull();
+    expect(result!.quantities.toast).toBe(25);
+  });
+
+  it('handles casual phrasing: "I\'d like ten toast and fifteen long please"', () => {
+    const result = parseOrderStrict("I'd like ten toast and fifteen long please");
+    expect(result).not.toBeNull();
+    expect(result!.quantities.toast).toBe(10);
+    expect(result!.quantities.long).toBe(15);
+  });
+
+  it('handles "can I get 12 toast, 5 bun, and 3 long"', () => {
+    const result = parseOrderStrict('can I get 12 toast, 5 bun, and 3 long');
+    expect(result).not.toBeNull();
+    expect(result!.quantities.toast).toBe(12);
+    expect(result!.quantities['4-inch']).toBe(5);
+    expect(result!.quantities.long).toBe(3);
+  });
+
+  it('handles product then comma then number: "toast, 10"', () => {
+    const result = parseOrderStrict('toast, 10');
+    expect(result).not.toBeNull();
+    expect(result!.quantities.toast).toBe(10);
+  });
 });
