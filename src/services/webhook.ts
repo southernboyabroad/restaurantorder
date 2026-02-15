@@ -144,7 +144,15 @@ webhookRouter.get('/trigger-email', async (req: Request, res: Response) => {
     const detail = err?.response?.body?.errors?.[0]?.message
       || err?.message
       || 'Unknown error';
-    res.status(500).json({ status: 'error', message: 'Failed to send email', detail });
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to send email',
+      detail,
+      debug: {
+        fromEmail: config.sendgrid.fromEmail,
+        warehouseEmail: config.sendgrid.warehouseEmail,
+      },
+    });
   }
 });
 
