@@ -19,6 +19,10 @@ export async function sendWarehouseEmail(
       email: fromEmail,
       name: config.emailSignOffName || 'Martins Bread Orders',
     },
+    replyTo: {
+      email: fromEmail,
+      name: config.emailSignOffName || 'Martins Bread Orders',
+    },
     subject,
     text: textBody,
     html: htmlBody,
