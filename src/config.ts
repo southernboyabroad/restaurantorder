@@ -41,6 +41,8 @@ export const config = {
     apiKey: optional('OPENAI_API_KEY', ''),
   },
 
+  emailSignOffName: optional('EMAIL_SIGN_OFF_NAME', 'Bryant'),
+
   products: optional('PRODUCTS', 'toast,4-inch,long,institutional_sandwich,dinner_rolls')
     .split(',')
     .map((p) => p.trim().toLowerCase()),

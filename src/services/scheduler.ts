@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { getCustomers, getTodaysOrders } from './sheets';
 import { sendSms, buildOrderPromptMessage } from './sms';
-import { generateSummariesByRoute, formatSummaryText, formatSummaryHtml } from './orderSummary';
+import { generateSummariesByRoute, formatSummaryText, formatSummaryHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
 import { sendWarehouseEmail } from './email';
 import { ensureOrdersSheet } from './sheets';
 import { ensureDeliveryTab } from './deliveryTab';
@@ -10,11 +10,6 @@ import logger from '../logger';
 
 function todayDateStr(): string {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-}
-
-function todayDisplayDate(): string {
-  const now = new Date();
-  return `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`; // M/D/YYYY
 }
 
 // ── 9:30 AM ET — Wed, Fri, Sat — send order prompts ─────────────
@@ -120,7 +115,9 @@ async function afternoonJob(): Promise<void> {
   logger.info('=== AFTERNOON JOB START ===');
   try {
     const dateStr = todayDateStr();
-    const displayDate = todayDisplayDate();
+    const delivery = getDeliveryDate();
+    const deliveryDateStr = formatDeliveryDate(delivery);
+    const dayName = deliveryDayName(delivery);
     const summaries = await generateSummariesByRoute(dateStr);
 
     if (summaries.length === 0) {
@@ -130,9 +127,9 @@ async function afternoonJob(): Promise<void> {
 
     for (const summary of summaries) {
       const routeLabel = summary.route || 'Unassigned';
-      const subject = `ADDITIONS to Route ${routeLabel} - ${displayDate}`;
-      const textBody = formatSummaryText(summary);
-      const htmlBody = formatSummaryHtml(summary);
+      const subject = `ADDITIONS to Route ${routeLabel}- ${deliveryDateStr}`;
+      const textBody = formatSummaryText(summary, dayName);
+      const htmlBody = formatSummaryHtml(summary, dayName);
 
       await sendWarehouseEmail(subject, textBody, htmlBody);
       logger.info(`Email sent for route ${routeLabel}`);

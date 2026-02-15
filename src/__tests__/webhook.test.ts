@@ -6,7 +6,13 @@ jest.mock('../config', () => ({
       authToken: 'test_token',
       phoneNumber: '+15550000000',
     },
+    sendgrid: {
+      apiKey: 'SG.test',
+      fromEmail: 'test@example.com',
+      warehouseEmail: 'warehouse@example.com',
+    },
     openai: { apiKey: '' },
+    emailSignOffName: 'Bryant',
   },
 }));
 
@@ -18,10 +24,15 @@ jest.mock('../services/sms', () => ({
 jest.mock('../services/sheets', () => ({
   findCustomerByPhone: jest.fn(),
   appendOrder: jest.fn().mockResolvedValue(undefined),
+  getTodaysOrders: jest.fn().mockResolvedValue([]),
 }));
 
 jest.mock('../services/orderParser', () => ({
   parseOrder: jest.fn(),
+}));
+
+jest.mock('../services/email', () => ({
+  sendWarehouseEmail: jest.fn().mockResolvedValue(undefined),
 }));
 
 import express from 'express';

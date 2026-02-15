@@ -1,6 +1,7 @@
 jest.mock('../config', () => ({
   config: {
     products: ['toast', '4-inch', 'long', 'institutional_sandwich', 'dinner_rolls'],
+    emailSignOffName: 'Bryant',
   },
 }));
 
@@ -8,7 +9,7 @@ jest.mock('../services/sheets', () => ({
   getTodaysOrders: jest.fn(),
 }));
 
-import { generateSummary, generateSummariesByRoute, formatSummaryText } from '../services/orderSummary';
+import { generateSummary, generateSummariesByRoute, formatSummaryText, getDeliveryDate, deliveryDayName } from '../services/orderSummary';
 import { getTodaysOrders } from '../services/sheets';
 
 const mockGetTodaysOrders = getTodaysOrders as jest.MockedFunction<typeof getTodaysOrders>;
@@ -110,7 +111,7 @@ describe('generateSummariesByRoute', () => {
 });
 
 describe('formatSummaryText', () => {
-  it('produces a readable text summary', () => {
+  it('produces a readable text summary with delivery day and sign-off', () => {
     const text = formatSummaryText({
       date: '2025-01-15',
       route: '25252',
@@ -126,10 +127,37 @@ describe('formatSummaryText', () => {
           rawReply: 'toast 10',
         },
       ],
-    });
+    }, 'Monday');
 
-    expect(text).toContain('Please add the following and confirm:');
+    expect(text).toContain('please add the following to Monday and confirm:');
+    expect(text).toContain('ALL INSTITUTIONAL');
     expect(text).toContain('10 - toast');
-    expect(text).not.toContain('4-inch'); // 0-qty products omitted
+    expect(text).toContain('Thx,');
+    expect(text).toContain('Bryant');
+    expect(text).not.toContain('4 inch'); // 0-qty products omitted
+  });
+});
+
+describe('getDeliveryDate', () => {
+  it('returns next day for a Wednesday', () => {
+    // Wed Feb 18, 2026
+    const wed = new Date(2026, 1, 18);
+    const delivery = getDeliveryDate(wed);
+    expect(delivery.getDay()).toBe(4); // Thursday
+  });
+
+  it('skips Sunday for a Saturday', () => {
+    // Sat Feb 14, 2026
+    const sat = new Date(2026, 1, 14);
+    const delivery = getDeliveryDate(sat);
+    expect(delivery.getDay()).toBe(1); // Monday
+    expect(deliveryDayName(delivery)).toBe('Monday');
+  });
+
+  it('returns Saturday for a Friday', () => {
+    // Fri Feb 13, 2026
+    const fri = new Date(2026, 1, 13);
+    const delivery = getDeliveryDate(fri);
+    expect(delivery.getDay()).toBe(6); // Saturday
   });
 });

@@ -5,6 +5,8 @@ import { findCustomerByPhone, appendOrder } from './sheets';
 import { parseOrder } from './orderParser';
 import { sendSms } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
+import { generateSummariesByRoute, formatSummaryText, formatSummaryHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
+import { sendWarehouseEmail } from './email';
 import logger from '../logger';
 
 export const webhookRouter = express.Router();
@@ -103,6 +105,41 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
   } catch (err) {
     logger.error('Error processing inbound SMS', { error: err, from, body });
     res.status(500).type('text/xml').send('<Response></Response>');
+  }
+});
+
+// ── Manual trigger: send warehouse email now ────────────────────
+// POST /trigger-email  (optionally pass ?date=2026-02-15)
+webhookRouter.post('/trigger-email', express.json(), async (req: Request, res: Response) => {
+  try {
+    const dateStr = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+    const delivery = getDeliveryDate();
+    const deliveryDateStr = formatDeliveryDate(delivery);
+    const dayName = deliveryDayName(delivery);
+
+    const summaries = await generateSummariesByRoute(dateStr);
+
+    if (summaries.length === 0) {
+      res.json({ status: 'no_orders', message: `No orders found for ${dateStr}` });
+      return;
+    }
+
+    const sent: string[] = [];
+    for (const summary of summaries) {
+      const routeLabel = summary.route || 'Unassigned';
+      const subject = `ADDITIONS to Route ${routeLabel}- ${deliveryDateStr}`;
+      const textBody = formatSummaryText(summary, dayName);
+      const htmlBody = formatSummaryHtml(summary, dayName);
+
+      await sendWarehouseEmail(subject, textBody, htmlBody);
+      sent.push(routeLabel);
+      logger.info(`Manual trigger: email sent for route ${routeLabel}`);
+    }
+
+    res.json({ status: 'sent', date: dateStr, deliveryDate: deliveryDateStr, routes: sent });
+  } catch (err) {
+    logger.error('Manual email trigger failed', { error: err });
+    res.status(500).json({ status: 'error', message: 'Failed to send email' });
   }
 });
 

@@ -10,6 +10,45 @@ export interface OrderSummary {
   orders: OrderRow[];
 }
 
+// ── Friendly product display names for emails ───────────────────
+const PRODUCT_DISPLAY_NAMES: Record<string, string> = {
+  'toast': 'toast',
+  '4-inch': '4 inch',
+  'long': 'long',
+  'institutional_sandwich': 'sandwich',
+  'dinner_rolls': 'dinner rolls',
+};
+
+function productDisplayName(product: string): string {
+  return PRODUCT_DISPLAY_NAMES[product] || product.replace(/_/g, ' ');
+}
+
+// ── Delivery date helpers ───────────────────────────────────────
+// The delivery date is the next day after order collection, skipping Sunday.
+// Wed orders → Thu delivery, Fri → Sat, Sat → Mon
+
+export function getDeliveryDate(orderDate?: Date): Date {
+  const base = orderDate || new Date();
+  const delivery = new Date(base);
+  delivery.setDate(delivery.getDate() + 1);
+  // If delivery lands on Sunday, push to Monday
+  if (delivery.getDay() === 0) {
+    delivery.setDate(delivery.getDate() + 1);
+  }
+  return delivery;
+}
+
+export function formatDeliveryDate(date: Date): string {
+  return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+}
+
+export function deliveryDayName(date: Date): string {
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  return days[date.getDay()];
+}
+
+// ── Summary builder ─────────────────────────────────────────────
+
 function buildSummary(dateStr: string, route: string, orders: OrderRow[]): OrderSummary {
   const totalsByProduct: Record<string, number> = {};
   for (const product of config.products) {
@@ -61,35 +100,40 @@ export async function generateSummariesByRoute(dateStr: string): Promise<OrderSu
   return summaries;
 }
 
-export function formatSummaryText(summary: OrderSummary): string {
+export function formatSummaryText(summary: OrderSummary, deliveryDay: string): string {
   const lines: string[] = [
-    'Please add the following and confirm:',
-    '',
+    `please add the following to ${deliveryDay} and confirm:`,
+    'ALL INSTITUTIONAL',
   ];
 
   for (const product of config.products) {
     const qty = summary.totalsByProduct[product] || 0;
     if (qty === 0) continue;
-    const displayName = product.replace(/_/g, ' ');
-    lines.push(`${qty} - ${displayName}`);
+    lines.push(`${qty} - ${productDisplayName(product)}`);
   }
+
+  lines.push('');
+  lines.push('Thx,');
+  lines.push(config.emailSignOffName);
 
   return lines.join('\n');
 }
 
-export function formatSummaryHtml(summary: OrderSummary): string {
+export function formatSummaryHtml(summary: OrderSummary, deliveryDay: string): string {
   const productLines = config.products
     .filter((p) => (summary.totalsByProduct[p] || 0) > 0)
     .map((p) => {
-      const displayName = p.replace(/_/g, ' ');
       const qty = summary.totalsByProduct[p];
-      return `<p style="margin:4px 0;font-size:16px"><strong>${qty}</strong> - ${displayName}</p>`;
+      return `<p style="margin:4px 0;font-size:16px"><strong>${qty}</strong> - ${productDisplayName(p)}</p>`;
     })
     .join('\n');
 
   return `
 <html><body style="font-family:sans-serif">
-<p>Please add the following and confirm:</p>
+<p>please add the following to ${deliveryDay} and confirm:</p>
+<p><strong>ALL INSTITUTIONAL</strong></p>
 ${productLines}
+<br>
+<p>Thx,<br>${config.emailSignOffName}</p>
 </body></html>`;
 }
