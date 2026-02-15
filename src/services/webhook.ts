@@ -109,8 +109,9 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
 });
 
 // ── Manual trigger: send warehouse email now ────────────────────
-// POST /trigger-email  (optionally pass ?date=2026-02-15)
-webhookRouter.post('/trigger-email', express.json(), async (req: Request, res: Response) => {
+// GET /trigger-email  (optionally pass ?date=2026-02-15)
+// Just visit this URL in your browser to fire off the warehouse email.
+webhookRouter.get('/trigger-email', async (req: Request, res: Response) => {
   try {
     const dateStr = (req.query.date as string) || new Date().toISOString().slice(0, 10);
     const delivery = getDeliveryDate();
