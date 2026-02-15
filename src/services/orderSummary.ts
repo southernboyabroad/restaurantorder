@@ -141,14 +141,12 @@ ${productLines}
 // ── Single-order formatters (one email per SMS) ─────────────────
 
 export function formatOrderText(
-  customerName: string,
   quantities: Record<string, number>,
   deliveryDay: string,
 ): string {
   const lines: string[] = [
     `please add the following to ${deliveryDay} and confirm:`,
     'ALL INSTITUTIONAL',
-    `(${customerName})`,
   ];
 
   for (const product of config.products) {
@@ -165,7 +163,6 @@ export function formatOrderText(
 }
 
 export function formatOrderHtml(
-  customerName: string,
   quantities: Record<string, number>,
   deliveryDay: string,
 ): string {
@@ -181,7 +178,6 @@ export function formatOrderHtml(
 <html><body style="font-family:sans-serif">
 <p>please add the following to ${deliveryDay} and confirm:</p>
 <p><strong>ALL INSTITUTIONAL</strong></p>
-<p><em>(${customerName})</em></p>
 ${productLines}
 <br>
 <p>Thx,<br>${config.emailSignOffName}</p>

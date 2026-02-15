@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { getCustomers, getTodaysOrders } from './sheets';
+import { getCustomers, getTodaysOrders, markOrdersAsEmailed } from './sheets';
 import { sendSms, buildOrderPromptMessage } from './sms';
 import { generateSummariesByRoute, formatSummaryText, formatSummaryHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
 import { sendWarehouseEmail } from './email';
@@ -134,6 +134,9 @@ async function afternoonJob(): Promise<void> {
       await sendWarehouseEmail(subject, textBody, htmlBody);
       logger.info(`Email sent for route ${routeLabel}`);
     }
+
+    // Mark all orders as emailed so late orders trigger individual emails
+    await markOrdersAsEmailed(dateStr);
 
     logger.info('=== AFTERNOON JOB COMPLETE ===');
   } catch (err) {

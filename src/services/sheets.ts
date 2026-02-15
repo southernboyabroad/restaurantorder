@@ -21,6 +21,7 @@ export interface OrderRow {
   route: string; // delivery route number
   quantities: Record<string, number>; // product → qty
   rawReply: string;
+  emailed: boolean; // true if this order was already included in a warehouse email
 }
 
 let sheetsClient: sheets_v4.Sheets | null = null;
@@ -73,7 +74,7 @@ export async function getCustomers(): Promise<Customer[]> {
 
 export async function ensureOrdersSheet(): Promise<void> {
   const sheets = getClient();
-  const headers = ['Date', 'Phone', 'Name', 'Route', ...config.products, 'Raw Reply'];
+  const headers = ['Date', 'Phone', 'Name', 'Route', ...config.products, 'Raw Reply', 'Emailed'];
 
   // Check if sheet exists — try to read A1
   try {
@@ -135,6 +136,7 @@ export async function getTodaysOrders(dateStr: string): Promise<OrderRow[]> {
 
   const rows = res.data.values || [];
   const orders: OrderRow[] = [];
+  const emailedCol = 4 + config.products.length + 1; // after Raw Reply
 
   for (const row of rows) {
     if (row[0] !== dateStr) continue;
@@ -149,11 +151,69 @@ export async function getTodaysOrders(dateStr: string): Promise<OrderRow[]> {
       route: row[3] || '',
       quantities,
       rawReply: row[4 + config.products.length] || '',
+      emailed: (row[emailedCol] || '').toUpperCase() === 'Y',
     });
   }
 
   logger.info(`Found ${orders.length} orders for ${dateStr}`);
   return orders;
+}
+
+// ── Check if today's batch email has already been sent ─────────
+
+export async function hasBatchBeenSent(dateStr: string): Promise<boolean> {
+  const orders = await getTodaysOrders(dateStr);
+  return orders.some((o) => o.emailed);
+}
+
+// ── Mark all of today's un-emailed orders as emailed ──────────
+
+export async function markOrdersAsEmailed(dateStr: string): Promise<void> {
+  const sheets = getClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: config.google.sheetId,
+    range: 'Orders!A2:ZZ',
+  });
+
+  const rows = res.data.values || [];
+  const emailedCol = 4 + config.products.length + 1; // 0-indexed within row
+  const emailedColLetter = columnLetter(emailedCol); // spreadsheet column letter
+
+  const updates: { range: string; values: string[][] }[] = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (row[0] !== dateStr) continue;
+    if ((row[emailedCol] || '').toUpperCase() === 'Y') continue; // already marked
+    const sheetRow = i + 2; // +2 because row 1 is headers, and i is 0-indexed
+    updates.push({
+      range: `Orders!${emailedColLetter}${sheetRow}`,
+      values: [['Y']],
+    });
+  }
+
+  if (updates.length === 0) return;
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: config.google.sheetId,
+    requestBody: {
+      valueInputOption: 'RAW',
+      data: updates,
+    },
+  });
+
+  logger.info(`Marked ${updates.length} orders as emailed for ${dateStr}`);
+}
+
+// Convert 0-based column index to spreadsheet letter (0=A, 1=B, …, 25=Z, 26=AA)
+function columnLetter(index: number): string {
+  let letter = '';
+  let n = index;
+  while (n >= 0) {
+    letter = String.fromCharCode((n % 26) + 65) + letter;
+    n = Math.floor(n / 26) - 1;
+  }
+  return letter;
 }
 
 // ── Normalize a phone string to E.164 (+1XXXXXXXXXX) ────────────

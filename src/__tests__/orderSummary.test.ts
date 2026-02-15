@@ -24,6 +24,7 @@ describe('generateSummary', () => {
         route: '25252',
         quantities: { toast: 10, '4-inch': 5, long: 0, institutional_sandwich: 0, dinner_rolls: 0 },
         rawReply: 'toast 10, 4-inch 5',
+        emailed: false,
       },
       {
         date: '2025-01-15',
@@ -32,6 +33,7 @@ describe('generateSummary', () => {
         route: '25248',
         quantities: { toast: 5, '4-inch': 0, long: 8, institutional_sandwich: 0, dinner_rolls: 20 },
         rawReply: 'toast 5, long 8, dinner rolls 20',
+        emailed: false,
       },
     ]);
 
@@ -65,6 +67,7 @@ describe('generateSummariesByRoute', () => {
         route: '25252',
         quantities: { toast: 10, '4-inch': 5, long: 0, institutional_sandwich: 0, dinner_rolls: 0 },
         rawReply: 'toast 10, 4-inch 5',
+        emailed: false,
       },
       {
         date: '2025-01-15',
@@ -73,6 +76,7 @@ describe('generateSummariesByRoute', () => {
         route: '25248',
         quantities: { toast: 5, '4-inch': 0, long: 8, institutional_sandwich: 0, dinner_rolls: 20 },
         rawReply: 'toast 5, long 8, dinner rolls 20',
+        emailed: false,
       },
       {
         date: '2025-01-15',
@@ -81,6 +85,7 @@ describe('generateSummariesByRoute', () => {
         route: '25252',
         quantities: { toast: 3, '4-inch': 0, long: 0, institutional_sandwich: 0, dinner_rolls: 0 },
         rawReply: 'toast 3',
+        emailed: false,
       },
     ]);
 
@@ -125,6 +130,7 @@ describe('formatSummaryText', () => {
           route: '25252',
           quantities: { toast: 10 },
           rawReply: 'toast 10',
+          emailed: false,
         },
       ],
     }, 'Monday');
