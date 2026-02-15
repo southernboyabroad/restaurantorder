@@ -5,7 +5,7 @@ import { findCustomerByPhone, appendOrder } from './sheets';
 import { parseOrder } from './orderParser';
 import { sendSms } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
-import { generateSummariesByRoute, formatSummaryText, formatSummaryHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
+import { generateSummariesByRoute, formatSummaryText, formatSummaryHtml, formatOrderText, formatOrderHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
 import { sendWarehouseEmail } from './email';
 import logger from '../logger';
 
@@ -87,6 +87,23 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       // Non-fatal — the flat Orders sheet already has the order
     }
 
+    // ── Send warehouse email for this individual order ──
+    try {
+      const delivery = getDeliveryDate();
+      const deliveryDateStr = formatDeliveryDate(delivery);
+      const dayName = deliveryDayName(delivery);
+      const routeLabel = customer.route || 'Unassigned';
+      const subject = `ADDITIONS to Route ${routeLabel}- ${deliveryDateStr}`;
+      const textBody = formatOrderText(customer.name, parsed.quantities, dayName);
+      const htmlBody = formatOrderHtml(customer.name, parsed.quantities, dayName);
+
+      await sendWarehouseEmail(subject, textBody, htmlBody);
+      logger.info('Warehouse email sent for individual order', { customer: customer.name, route: routeLabel });
+    } catch (emailErr) {
+      logger.error('Failed to send warehouse email for order', { error: emailErr, customer: customer.name });
+      // Non-fatal — the order is still recorded in the sheet
+    }
+
     // Build a confirmation
     const items = Object.entries(parsed.quantities)
       .filter(([, qty]) => qty > 0)
@@ -125,19 +142,24 @@ webhookRouter.get('/trigger-email', async (req: Request, res: Response) => {
       return;
     }
 
+    // Send one email per individual order (not cumulative totals)
+    let emailCount = 0;
     const sent: string[] = [];
     for (const summary of summaries) {
-      const routeLabel = summary.route || 'Unassigned';
-      const subject = `ADDITIONS to Route ${routeLabel}- ${deliveryDateStr}`;
-      const textBody = formatSummaryText(summary, dayName);
-      const htmlBody = formatSummaryHtml(summary, dayName);
+      for (const order of summary.orders) {
+        const routeLabel = order.route || 'Unassigned';
+        const subject = `ADDITIONS to Route ${routeLabel}- ${deliveryDateStr}`;
+        const textBody = formatOrderText(order.name, order.quantities, dayName);
+        const htmlBody = formatOrderHtml(order.name, order.quantities, dayName);
 
-      await sendWarehouseEmail(subject, textBody, htmlBody);
-      sent.push(routeLabel);
-      logger.info(`Manual trigger: email sent for route ${routeLabel}`);
+        await sendWarehouseEmail(subject, textBody, htmlBody);
+        emailCount++;
+        logger.info(`Manual trigger: email sent for ${order.name} on route ${routeLabel}`);
+      }
+      sent.push(summary.route || 'Unassigned');
     }
 
-    res.json({ status: 'sent', date: dateStr, deliveryDate: deliveryDateStr, routes: sent });
+    res.json({ status: 'sent', date: dateStr, deliveryDate: deliveryDateStr, routes: sent, emailsSent: emailCount });
   } catch (err: any) {
     logger.error('Manual email trigger failed', { error: err });
     // Show the actual error so we can diagnose SendGrid issues

@@ -137,3 +137,53 @@ ${productLines}
 <p>Thx,<br>${config.emailSignOffName}</p>
 </body></html>`;
 }
+
+// ── Single-order formatters (one email per SMS) ─────────────────
+
+export function formatOrderText(
+  customerName: string,
+  quantities: Record<string, number>,
+  deliveryDay: string,
+): string {
+  const lines: string[] = [
+    `please add the following to ${deliveryDay} and confirm:`,
+    'ALL INSTITUTIONAL',
+    `(${customerName})`,
+  ];
+
+  for (const product of config.products) {
+    const qty = quantities[product] || 0;
+    if (qty === 0) continue;
+    lines.push(`${qty} - ${productDisplayName(product)}`);
+  }
+
+  lines.push('');
+  lines.push('Thx,');
+  lines.push(config.emailSignOffName);
+
+  return lines.join('\n');
+}
+
+export function formatOrderHtml(
+  customerName: string,
+  quantities: Record<string, number>,
+  deliveryDay: string,
+): string {
+  const productLines = config.products
+    .filter((p) => (quantities[p] || 0) > 0)
+    .map((p) => {
+      const qty = quantities[p];
+      return `<p style="margin:4px 0;font-size:16px"><strong>${qty}</strong> - ${productDisplayName(p)}</p>`;
+    })
+    .join('\n');
+
+  return `
+<html><body style="font-family:sans-serif">
+<p>please add the following to ${deliveryDay} and confirm:</p>
+<p><strong>ALL INSTITUTIONAL</strong></p>
+<p><em>(${customerName})</em></p>
+${productLines}
+<br>
+<p>Thx,<br>${config.emailSignOffName}</p>
+</body></html>`;
+}
