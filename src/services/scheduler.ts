@@ -39,15 +39,26 @@ async function morningJob(): Promise<void> {
     // In test mode, only send to the test phone number
     if (config.testPhoneNumber) {
       logger.info(`TEST MODE — sending only to ${config.testPhoneNumber}`);
-      const message = buildOrderPromptMessage('Test Customer');
-      await sendSms(config.testPhoneNumber, message);
-      logger.info('Morning SMS test complete: 1 sent to test number');
+      const message = buildOrderPromptMessage(undefined);
+      if (message) {
+        await sendSms(config.testPhoneNumber, message);
+        logger.info('Morning SMS test complete: 1 sent to test number');
+      } else {
+        logger.info('Morning SMS test: no message for today (route/day combo)');
+      }
     } else {
+      // Build messages per customer; skip customers whose route has no text today
+      const toSend = customers
+        .map((c) => ({ customer: c, message: buildOrderPromptMessage(c.route) }))
+        .filter((entry): entry is { customer: typeof entry.customer; message: string } => entry.message !== null);
+
+      const skipped = customers.length - toSend.length;
+      if (skipped > 0) {
+        logger.info(`Skipping ${skipped} customer(s) — no text scheduled for their route today`);
+      }
+
       const results = await Promise.allSettled(
-        customers.map(async (c) => {
-          const message = buildOrderPromptMessage(c.name);
-          return sendSms(c.phone, message);
-        }),
+        toSend.map(({ customer, message }) => sendSms(customer.phone, message)),
       );
 
       const succeeded = results.filter((r) => r.status === 'fulfilled').length;
@@ -76,9 +87,12 @@ async function reminderJob(): Promise<void> {
     const orderedNames = new Set(orders.map((o) => o.name.toLowerCase()));
 
     // Find customers who haven't ordered — dedupe by name so each
-    // restaurant only gets one reminder per phone number
+    // restaurant only gets one reminder per phone number.
+    // Also skip customers whose route has no text today.
     const needsReminder = customers.filter(
-      (c) => !orderedNames.has(c.name.toLowerCase()),
+      (c) =>
+        !orderedNames.has(c.name.toLowerCase()) &&
+        buildOrderPromptMessage(c.route) !== null,
     );
 
     if (needsReminder.length === 0) {

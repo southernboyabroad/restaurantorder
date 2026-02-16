@@ -19,18 +19,42 @@ export async function sendSms(to: string, body: string): Promise<string> {
   }
 }
 
-export function buildOrderPromptMessage(customerName: string): string {
-  const productList = config.products
-    .map((p) => p.replace(/_/g, ' '))
-    .join(', ');
+/**
+ * Build the order prompt SMS for a customer based on their route and the
+ * current day of the week.  Returns `null` when no text should be sent
+ * (e.g. route 25248 on Fridays).
+ *
+ * Day-of-week uses JS convention: 0=Sun … 6=Sat.
+ */
+export function buildOrderPromptMessage(
+  route: string | undefined,
+  dayOfWeek?: number,
+): string | null {
+  const dow = dayOfWeek ?? new Date().getDay();
 
-  return (
-    `Hi ${customerName}! Time to place your order for the next delivery.\n\n` +
-    `Available products: ${productList}\n\n` +
-    `Reply with quantities, e.g.:\n` +
-    `toast 10, 4-inch 5, long 20\n\n` +
-    `Or just tell us what you need and we'll figure it out!`
-  );
+  // Route-specific messages keyed by day-of-week
+  const messageMap: Record<string, Record<number, string | null>> = {
+    '25252': {
+      6: 'Good morning. What can I get you for Monday?',   // Saturday
+      3: 'Good morning. What can I get you for tomorrow?',  // Wednesday
+      5: 'Good morning. What can I get you for tomorrow?',  // Friday
+    },
+    '25248': {
+      6: 'Good morning. What can I get you for Tuesday?',   // Saturday
+      3: 'Good morning. What can I get you for Friday?',    // Wednesday
+      5: null,                                               // Friday — no text
+    },
+  };
+
+  const routeMessages = route ? messageMap[route] : undefined;
+
+  if (routeMessages !== undefined) {
+    const msg = routeMessages[dow];
+    return msg !== undefined ? msg : null;
+  }
+
+  // Fallback for unknown routes — generic prompt
+  return 'Good morning. What can I get you for your next delivery?';
 }
 
 export function validateTwilioWebhook(
