@@ -1,6 +1,6 @@
 import express, { Request, Response } from 'express';
 import { config } from '../config';
-import { validateTwilioWebhook } from './sms';
+import { validateTwilioWebhook, buildOrderPromptMessage } from './sms';
 import { findCustomerByPhone, appendOrder, markOrdersAsEmailed } from './sheets';
 import { parseOrder } from './orderParser';
 import { sendSms } from './sms';
@@ -176,6 +176,54 @@ webhookRouter.get('/trigger-email', async (req: Request, res: Response) => {
         warehouseEmail: config.sendgrid.warehouseEmail,
       },
     });
+  }
+});
+
+// ── Manual trigger: send yourself the morning text to preview it ──
+// GET /trigger-morning-text?route=25252&day=6
+//   route — the route number to simulate (default: 25252)
+//   day   — day of week as a number: 0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat
+//           (defaults to today)
+// Only works when TEST_PHONE_NUMBER is set — will NOT text real customers.
+webhookRouter.get('/trigger-morning-text', async (req: Request, res: Response) => {
+  try {
+    if (!config.testPhoneNumber) {
+      res.status(400).json({
+        status: 'error',
+        message: 'TEST_PHONE_NUMBER must be set in .env to use this endpoint. This is a safety measure so real customers never get texted by accident.',
+      });
+      return;
+    }
+
+    const route = (req.query.route as string) || '25252';
+    const day = req.query.day !== undefined ? Number(req.query.day) : new Date().getDay();
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+    const message = buildOrderPromptMessage(route, day);
+
+    if (!message) {
+      res.json({
+        status: 'no_message',
+        route,
+        day: dayNames[day],
+        message: `Route ${route} does not get a text on ${dayNames[day]}s.`,
+      });
+      return;
+    }
+
+    await sendSms(config.testPhoneNumber, message);
+    logger.info('Manual morning text sent', { to: config.testPhoneNumber, route, day: dayNames[day] });
+
+    res.json({
+      status: 'sent',
+      to: config.testPhoneNumber,
+      route,
+      day: dayNames[day],
+      messageSent: message,
+    });
+  } catch (err: any) {
+    logger.error('Manual morning text trigger failed', { error: err });
+    res.status(500).json({ status: 'error', message: err?.message || 'Unknown error' });
   }
 });
 
