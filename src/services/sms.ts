@@ -35,14 +35,14 @@ export function buildOrderPromptMessage(
   // Route-specific messages keyed by day-of-week
   const messageMap: Record<string, Record<number, string | null>> = {
     '25252': {
-      6: 'Good morning. What can I get you for Monday?',   // Saturday
-      3: 'Good morning. What can I get you for tomorrow?',  // Wednesday
-      5: 'Good morning. What can I get you for tomorrow?',  // Friday
+      6: 'Good morning... what can I get you for Monday?',   // Saturday
+      3: 'Good morning... what can I get you for tomorrow?',  // Wednesday
+      5: 'Good morning... what can I get you for tomorrow?',  // Friday
     },
     '25248': {
-      6: 'Good morning. What can I get you for Tuesday?',   // Saturday
-      3: 'Good morning. What can I get you for Friday?',    // Wednesday
-      5: null,                                               // Friday — no text
+      6: 'Good morning... what can I get you for Tuesday?',   // Saturday
+      3: 'Good morning... what can I get you for Friday?',    // Wednesday
+      5: null,                                                 // Friday — no text
     },
   };
 
@@ -54,7 +54,7 @@ export function buildOrderPromptMessage(
   }
 
   // Fallback for unknown routes — generic prompt
-  return 'Good morning. What can I get you for your next delivery?';
+  return 'Good morning... what can I get you for your next delivery?';
 }
 
 export function validateTwilioWebhook(
