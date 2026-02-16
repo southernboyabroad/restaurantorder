@@ -172,7 +172,7 @@ docker run -d --name orders \
 | `GOOGLE_SHEET_ID` | Yes | Google Sheet ID |
 | `SENDGRID_API_KEY` | Yes | SendGrid API key |
 | `SENDGRID_FROM_EMAIL` | Yes | Verified sender email |
-| `WAREHOUSE_EMAIL` | Yes | Email to receive order summaries |
+| `WAREHOUSE_EMAIL` | Yes | Comma-separated emails to receive order summaries |
 | `OPENAI_API_KEY` | No | Enables AI order parsing fallback |
 | `PRODUCTS` | No | Comma-separated product list (default: chicken,ribs,pulled_pork,brisket,coleslaw,beans) |
 | `PORT` | No | Server port (default: 3000) |

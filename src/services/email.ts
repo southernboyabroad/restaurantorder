@@ -11,10 +11,13 @@ export async function sendWarehouseEmail(
 ): Promise<void> {
   // Trim whitespace from email addresses to avoid "Invalid from email" errors
   const fromEmail = config.sendgrid.fromEmail.trim();
-  const toEmail = config.sendgrid.warehouseEmail.trim();
+  const toEmails = config.sendgrid.warehouseEmail
+    .split(',')
+    .map((e) => e.trim())
+    .filter((e) => e.length > 0);
 
   const msg = {
-    to: toEmail,
+    to: toEmails,
     from: {
       email: fromEmail,
       name: config.emailSignOffName || 'Martins Bread Orders',
@@ -28,13 +31,13 @@ export async function sendWarehouseEmail(
     html: htmlBody,
   };
 
-  logger.info('Sending warehouse email', { from: fromEmail, to: toEmail, subject });
+  logger.info('Sending warehouse email', { from: fromEmail, to: toEmails, subject });
 
   try {
     await sgMail.send(msg);
-    logger.info(`Warehouse email sent to ${toEmail}`);
+    logger.info(`Warehouse email sent to ${toEmails.join(', ')}`);
   } catch (err) {
-    logger.error('Failed to send warehouse email', { error: err, from: fromEmail, to: toEmail });
+    logger.error('Failed to send warehouse email', { error: err, from: fromEmail, to: toEmails });
     throw err;
   }
 }
