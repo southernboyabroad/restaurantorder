@@ -69,7 +69,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
         } else if (customer.defaultProduct) {
           followUp = `Great! Just reply with how many ${customer.defaultProduct} you need.\nFor example: "10"`;
         } else {
-          followUp = `Great! Please reply with your order, like:\ntoast 10, 4-inch 5, long 20`;
+          followUp = `Great! Please reply with your order, like:\ntoast 10, 4-inch 5, hot dog 20`;
         }
         await sendSms(from, followUp);
         res.type('text/xml').send('<Response></Response>');
@@ -80,7 +80,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       logger.warn('Could not parse order from reply', { from, body });
       await sendSms(
         from,
-        `Hi ${customer.name}, we couldn't understand your order. Please reply with quantities like:\ntoast 10, 4-inch 5, long 20`,
+        `Hi ${customer.name}, we couldn't understand your order. Please reply with quantities like:\ntoast 10, 4-inch 5, hot dog 20`,
       );
       res.type('text/xml').send('<Response></Response>');
       return;
@@ -125,13 +125,17 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     }
 
     // Build a confirmation
-    let confirmationMsg = buildConfirmationMessage(customer.route);
+    const itemLines = Object.entries(parsed.quantities)
+      .filter(([, qty]) => qty > 0)
+      .map(([product, qty]) => {
+        const display = product.replace(/_/g, ' ').replace(/\blong\b/gi, 'hot dog');
+        return `${display} - ${qty}`;
+      })
+      .join('\n');
+
+    let confirmationMsg = buildConfirmationMessage(customer.route) + '\n\n' + itemLines;
     if (!parsed.confident) {
-      const items = Object.entries(parsed.quantities)
-        .filter(([, qty]) => qty > 0)
-        .map(([product, qty]) => `${product.replace(/_/g, ' ')} ×${qty}`)
-        .join(', ');
-      confirmationMsg += `\n\nWe recorded: ${items}\n⚠️ We interpreted your message with AI — please double-check and reply again if anything is wrong.`;
+      confirmationMsg += '\n\n⚠️ We interpreted your message with AI — please double-check and reply again if anything is wrong.';
     }
 
     await sendSms(from, confirmationMsg);
