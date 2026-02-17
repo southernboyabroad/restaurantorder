@@ -1,8 +1,8 @@
 import express, { Request, Response } from 'express';
 import { config } from '../config';
 import { validateTwilioWebhook, buildOrderPromptMessage, buildConfirmationMessage } from './sms';
-import { findCustomerByPhone, appendOrder, markOrdersAsEmailed } from './sheets';
-import { parseOrder, isAffirmativeReply } from './orderParser';
+import { findCustomerByPhone, appendOrder, markOrdersAsEmailed, getLastOrderForCustomer } from './sheets';
+import { parseOrder, isAffirmativeReply, isRepeatOrderRequest } from './orderParser';
 import { sendSms } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
 import { formatOrderText, formatOrderHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
@@ -76,14 +76,34 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
         return;
       }
 
-      // Could not parse anything useful
-      logger.warn('Could not parse order from reply', { from, body });
-      await sendSms(
-        from,
-        `Hi ${customer.name}, we couldn't understand your order. Please reply with quantities like:\ntoast 10, 4-inch 5, hot dog 20`,
-      );
-      res.type('text/xml').send('<Response></Response>');
-      return;
+      // Check if this is a repeat-order request like "same as last time"
+      if (isRepeatOrderRequest(body)) {
+        logger.info('Repeat order request detected — looking up last order', { from, body });
+        const lastOrder = await getLastOrderForCustomer(from);
+        if (lastOrder) {
+          // Re-use the quantities from their last order
+          parsed.quantities = lastOrder.quantities;
+          parsed.confident = true;
+          logger.info('Repeating previous order', { from, quantities: lastOrder.quantities });
+          // Fall through to the order-recording logic below
+        } else {
+          await sendSms(
+            from,
+            `Hi ${customer.name}, we don't have a previous order on file for you. Please reply with your order like:\ntoast 10, 4-inch 5, hot dog 20`,
+          );
+          res.type('text/xml').send('<Response></Response>');
+          return;
+        }
+      } else {
+        // Could not parse anything useful
+        logger.warn('Could not parse order from reply', { from, body });
+        await sendSms(
+          from,
+          `Hi ${customer.name}, we couldn't understand your order. Please reply with quantities like:\ntoast 10, 4-inch 5, hot dog 20`,
+        );
+        res.type('text/xml').send('<Response></Response>');
+        return;
+      }
     }
 
     // Record the order

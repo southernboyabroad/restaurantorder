@@ -26,11 +26,13 @@ jest.mock('../services/sheets', () => ({
   appendOrder: jest.fn().mockResolvedValue(undefined),
   getTodaysOrders: jest.fn().mockResolvedValue([]),
   markOrdersAsEmailed: jest.fn().mockResolvedValue(undefined),
+  getLastOrderForCustomer: jest.fn().mockResolvedValue(null),
 }));
 
 jest.mock('../services/orderParser', () => ({
   parseOrder: jest.fn(),
   isAffirmativeReply: jest.fn().mockReturnValue(false),
+  isRepeatOrderRequest: jest.fn().mockReturnValue(false),
 }));
 
 jest.mock('../services/email', () => ({

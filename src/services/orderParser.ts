@@ -217,6 +217,27 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   return { quantities, confident: true };
 }
 
+// ── Repeat-order detection ──────────────────────────────────────
+// Detects replies like "same as last time", "repeat", "the usual", etc.
+
+const REPEAT_ORDER_PATTERNS = [
+  /\bsame\s*(as\s*(last|before|previous))?\s*(time|order)?\b/i,
+  /\bsame\s+thing\b/i,
+  /\brepeat\b/i,
+  /\blast\s+order\b/i,
+  /\bprevious\s+order\b/i,
+  /\b(the\s+)?usual\b/i,
+  /\bwhat\s+i\s+(got|had|ordered)\s+(last|before)\b/i,
+  /\bgive\s+me\s+(the\s+)?same\b/i,
+  /\bdo\s+(the\s+)?same\b/i,
+];
+
+export function isRepeatOrderRequest(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length > 80) return false;
+  return REPEAT_ORDER_PATTERNS.some((p) => p.test(trimmed));
+}
+
 // ── Affirmative reply detection ──────────────────────────────────
 // Detects replies like "Yes", "Okay", "Sure" that confirm interest
 // but don't contain actual order quantities.

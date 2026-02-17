@@ -220,6 +220,50 @@ function columnLetter(index: number): string {
   return letter;
 }
 
+// ── Get the most recent order for a customer (by phone) ─────────
+
+export async function getLastOrderForCustomer(phone: string): Promise<OrderRow | null> {
+  const normalized = normalizePhone(phone);
+  const sheets = getClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: config.google.sheetId,
+    range: 'Orders!A2:ZZ',
+  });
+
+  const rows = res.data.values || [];
+  let lastOrder: OrderRow | null = null;
+
+  for (const row of rows) {
+    if (normalizePhone(row[1] || '') !== normalized) continue;
+    const quantities: Record<string, number> = {};
+    let hasItems = false;
+    config.products.forEach((p, i) => {
+      const qty = parseInt(row[4 + i] || '0', 10) || 0;
+      quantities[p] = qty;
+      if (qty > 0) hasItems = true;
+    });
+    if (!hasItems) continue;
+    const emailedCol = 4 + config.products.length + 1;
+    lastOrder = {
+      date: row[0],
+      phone: row[1],
+      name: row[2],
+      route: row[3] || '',
+      quantities,
+      rawReply: row[4 + config.products.length] || '',
+      emailed: (row[emailedCol] || '').toUpperCase() === 'Y',
+    };
+  }
+
+  if (lastOrder) {
+    logger.info('Found last order for customer', { phone: normalized, date: lastOrder.date, quantities: lastOrder.quantities });
+  } else {
+    logger.info('No previous order found for customer', { phone: normalized });
+  }
+
+  return lastOrder;
+}
+
 // ── Normalize a phone string to E.164 (+1XXXXXXXXXX) ────────────
 
 function normalizePhone(raw: string): string {
