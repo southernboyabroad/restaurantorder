@@ -57,6 +57,11 @@ jest.mock('../services/deliveryTab', () => ({
   updateDeliveryTabOrder: jest.fn().mockResolvedValue(undefined),
 }));
 
+// Default: ordering window is open (so existing tests still work)
+jest.mock('../services/orderingWindow', () => ({
+  isInsideOrderingWindow: jest.fn().mockReturnValue(true),
+}));
+
 jest.mock('../services/orderSummary', () => ({
   formatOrderText: jest.fn().mockReturnValue('mock text'),
   formatOrderHtml: jest.fn().mockReturnValue('<p>mock html</p>'),
@@ -71,6 +76,7 @@ import { webhookRouter } from '../services/webhook';
 import { findCustomerByPhone } from '../services/sheets';
 import { parseOrder } from '../services/orderParser';
 import { sendSms } from '../services/sms';
+import { isInsideOrderingWindow } from '../services/orderingWindow';
 
 const app = express();
 app.use('/', webhookRouter);
@@ -78,6 +84,7 @@ app.use('/', webhookRouter);
 const mockFindCustomer = findCustomerByPhone as jest.MockedFunction<typeof findCustomerByPhone>;
 const mockParseOrder = parseOrder as jest.MockedFunction<typeof parseOrder>;
 const mockSendSms = sendSms as jest.MockedFunction<typeof sendSms>;
+const mockIsInsideOrderingWindow = isInsideOrderingWindow as jest.MockedFunction<typeof isInsideOrderingWindow>;
 
 describe('POST /sms webhook', () => {
   beforeEach(() => {
@@ -136,5 +143,35 @@ describe('POST /sms webhook', () => {
     const res = await request(app).get('/health');
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ok');
+  });
+
+  it('ignores inbound SMS outside the ordering window (no bot reply)', async () => {
+    mockIsInsideOrderingWindow.mockReturnValue(false);
+
+    const res = await request(app)
+      .post('/sms')
+      .type('form')
+      .send({ Body: 'toast 10', From: '+15551111111' });
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('<Response></Response>');
+    // The bot should NOT have sent any SMS reply
+    expect(mockSendSms).not.toHaveBeenCalled();
+    // Restore for other tests
+    mockIsInsideOrderingWindow.mockReturnValue(true);
+  });
+
+  it('processes orders inside the ordering window', async () => {
+    mockIsInsideOrderingWindow.mockReturnValue(true);
+    mockFindCustomer.mockResolvedValue({ name: 'Alice', phone: '+15551111111', route: '25252' });
+    mockParseOrder.mockResolvedValue({ quantities: { toast: 10 }, confident: true });
+
+    const res = await request(app)
+      .post('/sms')
+      .type('form')
+      .send({ Body: 'toast 10', From: '+15551111111' });
+
+    expect(res.status).toBe(200);
+    expect(mockSendSms).toHaveBeenCalled();
   });
 });

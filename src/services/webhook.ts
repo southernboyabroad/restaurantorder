@@ -7,6 +7,7 @@ import { sendSms } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
 import { formatOrderText, formatOrderHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
 import { sendWarehouseEmail } from './email';
+import { isInsideOrderingWindow } from './orderingWindow';
 import logger from '../logger';
 
 // ── Order correction handler ────────────────────────────────────
@@ -141,6 +142,13 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
   const { Body: body, From: from } = req.body as { Body: string; From: string };
 
   logger.info('Inbound SMS received', { from, body });
+
+  // ── Outside the ordering window → stay silent, let texts pass through ──
+  if (!isInsideOrderingWindow()) {
+    logger.info('Outside ordering window — ignoring inbound SMS (no bot reply)', { from });
+    res.type('text/xml').send('<Response></Response>');
+    return;
+  }
 
   // ── Optionally validate Twilio signature ──
   // Disabled by default because Messaging Services + reverse proxies
