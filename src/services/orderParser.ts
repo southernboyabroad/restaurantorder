@@ -265,6 +265,58 @@ export function isAffirmativeReply(text: string): boolean {
   return AFFIRMATIVE_PATTERNS.some((p) => p.test(trimmed));
 }
 
+// ── Order correction detection ──────────────────────────────────
+// Detects messages like:
+//   Admin:    "change Waldo's toast to 15"
+//   Customer: "change my toast to 15" / "change toast to 15"
+
+export interface CorrectionRequest {
+  customerNameHint?: string; // undefined = self-correction
+  orderText: string;         // the portion describing new quantities
+}
+
+const CORRECTION_PREFIX = /^(change|update|fix|correct)\s+(that\s+)?/i;
+
+export function parseCorrectionRequest(text: string): CorrectionRequest | null {
+  const trimmed = text.trim();
+  if (!CORRECTION_PREFIX.test(trimmed)) return null;
+
+  const afterKeyword = trimmed.replace(CORRECTION_PREFIX, '').trim();
+  if (!afterKeyword) return null;
+
+  // Self-correction: "my order to ..." or "my toast to 15"
+  const myMatch = afterKeyword.match(/^my\s+(order\s+to\s+)?(.+)$/i);
+  if (myMatch) {
+    return { orderText: myMatch[2].trim() };
+  }
+
+  // Admin correction: "<name>'s ..." — capture everything before the first possessive 's
+  const possessiveMatch = afterKeyword.match(/^(.+?)[''']s?\s+(order\s+to\s+)?(.+)$/i);
+  if (possessiveMatch) {
+    const nameHint = possessiveMatch[1].trim();
+    const orderText = possessiveMatch[3].trim();
+    // "my" isn't a customer name
+    if (nameHint.toLowerCase() === 'my') {
+      return { orderText };
+    }
+    return { customerNameHint: nameHint, orderText };
+  }
+
+  // "order to ..." (no name, no "my")
+  const orderToMatch = afterKeyword.match(/^order\s+to\s+(.+)$/i);
+  if (orderToMatch) {
+    return { orderText: orderToMatch[1].trim() };
+  }
+
+  // Fallback — treat whole remaining text as self-correction
+  return { orderText: afterKeyword };
+}
+
+// Preprocess correction text so "toast to 15" becomes "toast 15"
+export function preprocessCorrectionText(text: string): string {
+  return text.replace(/\s+to\s+(\d)/g, ' $1');
+}
+
 // ── AI-assisted parser (OpenAI fallback) ────────────────────────
 
 export async function parseOrderWithAI(text: string): Promise<ParsedOrder> {

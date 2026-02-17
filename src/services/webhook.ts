@@ -1,13 +1,138 @@
 import express, { Request, Response } from 'express';
 import { config } from '../config';
 import { validateTwilioWebhook, buildOrderPromptMessage, buildConfirmationMessage } from './sms';
-import { findCustomerByPhone, appendOrder, markOrdersAsEmailed, getLastOrderForCustomer } from './sheets';
-import { parseOrder, isAffirmativeReply, isRepeatOrderRequest } from './orderParser';
+import { findCustomerByPhone, findCustomerByNameHint, normalizePhone, appendOrder, markOrdersAsEmailed, getLastOrderForCustomer, updateTodaysOrder, Customer } from './sheets';
+import { parseOrder, parseOrderStrict, isAffirmativeReply, isRepeatOrderRequest, parseCorrectionRequest, preprocessCorrectionText } from './orderParser';
 import { sendSms } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
 import { formatOrderText, formatOrderHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
 import { sendWarehouseEmail } from './email';
 import logger from '../logger';
+
+// ── Order correction handler ────────────────────────────────────
+// Admin texts:    "change Waldo's toast to 15"
+// Customer texts: "change my toast to 15" or "change toast to 15"
+
+async function handleCorrection(
+  from: string,
+  senderCustomer: Customer | undefined,
+  isAdmin: boolean,
+  correction: ReturnType<typeof parseCorrectionRequest> & {},
+  res: import('express').Response,
+): Promise<void> {
+  const dateStr = new Date().toISOString().slice(0, 10);
+
+  let targetCustomer: Customer;
+
+  if (correction.customerNameHint) {
+    // Admin correction — changing someone else's order
+    if (!isAdmin) {
+      const msg = senderCustomer
+        ? "Sorry, only the admin can correct other customers' orders."
+        : "Sorry, we don't have your number on file. Please contact us to get set up.";
+      await sendSms(from, msg);
+      res.type('text/xml').send('<Response></Response>');
+      return;
+    }
+
+    const lookup = await findCustomerByNameHint(correction.customerNameHint);
+    if (!lookup) {
+      await sendSms(from, `Couldn't find a customer matching "${correction.customerNameHint}". Check the name and try again.`);
+      res.type('text/xml').send('<Response></Response>');
+      return;
+    }
+    if (lookup.ambiguous) {
+      const names = lookup.ambiguous.slice(0, 5).join(', ');
+      await sendSms(from, `Multiple customers match "${correction.customerNameHint}": ${names}. Please be more specific.`);
+      res.type('text/xml').send('<Response></Response>');
+      return;
+    }
+    targetCustomer = lookup.customer;
+  } else {
+    // Self-correction
+    if (!senderCustomer) {
+      await sendSms(from, "Sorry, we don't have your number on file. Please contact us to get set up.");
+      res.type('text/xml').send('<Response></Response>');
+      return;
+    }
+    targetCustomer = senderCustomer;
+  }
+
+  // Parse quantities from the correction text
+  const preprocessed = preprocessCorrectionText(correction.orderText);
+  const parsed = parseOrderStrict(preprocessed);
+  const hasItems = parsed && Object.values(parsed.quantities).some((q) => q > 0);
+
+  if (!hasItems) {
+    const example = correction.customerNameHint
+      ? `"change ${correction.customerNameHint}'s toast to 15"`
+      : '"change my toast to 15"';
+    await sendSms(from, `Couldn't understand the correction. Try something like:\n${example}`);
+    res.type('text/xml').send('<Response></Response>');
+    return;
+  }
+
+  // Update the existing order in the sheet
+  const result = await updateTodaysOrder(targetCustomer.name, dateStr, parsed!.quantities);
+
+  if (!result.found) {
+    await sendSms(from, `No order found today for ${targetCustomer.name}. They may not have ordered yet.`);
+    res.type('text/xml').send('<Response></Response>');
+    return;
+  }
+
+  // Update the delivery tab with the merged quantities
+  try {
+    await updateDeliveryTabOrder(targetCustomer.name, result.mergedQuantities);
+  } catch (tabErr) {
+    logger.error('Failed to update delivery tab for correction', { error: tabErr });
+  }
+
+  // If the original was already emailed, send a correction email now
+  if (result.wasEmailed) {
+    try {
+      const delivery = getDeliveryDate();
+      const deliveryDateStr = formatDeliveryDate(delivery);
+      const dayName = deliveryDayName(delivery);
+      const routeLabel = targetCustomer.route || 'Unassigned';
+      const subject = `CORRECTED - Route ${routeLabel} - ${deliveryDateStr} - ${targetCustomer.name}`;
+      const textBody = formatOrderText(result.mergedQuantities, dayName);
+      const htmlBody = formatOrderHtml(result.mergedQuantities, dayName);
+
+      await sendWarehouseEmail(subject, textBody, htmlBody);
+      logger.info('Correction email sent to warehouse', { customer: targetCustomer.name, route: routeLabel });
+    } catch (emailErr) {
+      logger.error('Failed to send correction email', { error: emailErr, customer: targetCustomer.name });
+    }
+  }
+
+  // Send confirmation
+  const itemLines = Object.entries(result.mergedQuantities)
+    .filter(([, qty]) => qty > 0)
+    .map(([product, qty]) => {
+      const display = product
+        .replace(/_/g, ' ')
+        .replace(/\blong\b/gi, 'hot dog')
+        .replace(/\binstitutional sandwich\b/gi, 'sandwich');
+      return `${display} - ${qty}`;
+    })
+    .join('\n');
+
+  let msg = `Order corrected for ${targetCustomer.name}:\n\n${itemLines}`;
+  if (result.wasEmailed) {
+    msg += '\n\nA corrected email has been sent to the warehouse.';
+  }
+
+  await sendSms(from, msg);
+  logger.info('Order correction completed', {
+    correctedBy: from,
+    customer: targetCustomer.name,
+    previousQuantities: result.previousQuantities,
+    newQuantities: result.mergedQuantities,
+    wasEmailed: result.wasEmailed,
+  });
+  res.type('text/xml').send('<Response></Response>');
+}
 
 export const webhookRouter = express.Router();
 
@@ -44,6 +169,15 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
   try {
     // Look up customer
     const customer = await findCustomerByPhone(from);
+    const isAdmin = !!config.adminPhoneNumber && normalizePhone(from) === normalizePhone(config.adminPhoneNumber);
+
+    // ── Check for order correction ──────────────────────────────
+    const correction = parseCorrectionRequest(body);
+    if (correction) {
+      await handleCorrection(from, customer, isAdmin, correction, res);
+      return;
+    }
+
     if (!customer) {
       logger.warn('Received SMS from unknown number', { from });
       // Reply politely

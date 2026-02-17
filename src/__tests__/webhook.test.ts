@@ -13,30 +13,56 @@ jest.mock('../config', () => ({
     },
     openai: { apiKey: '' },
     emailSignOffName: 'Bryant',
+    adminPhoneNumber: '',
   },
 }));
 
 jest.mock('../services/sms', () => ({
   sendSms: jest.fn().mockResolvedValue('SM_test'),
   validateTwilioWebhook: jest.fn().mockReturnValue(true),
+  buildOrderPromptMessage: jest.fn().mockReturnValue(null),
+  buildConfirmationMessage: jest.fn().mockReturnValue('Sounds good... Have a great afternoon.'),
 }));
 
 jest.mock('../services/sheets', () => ({
   findCustomerByPhone: jest.fn(),
+  findCustomerByNameHint: jest.fn(),
+  normalizePhone: jest.fn((raw: string) => {
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+    return raw.startsWith('+') ? raw : `+${raw}`;
+  }),
   appendOrder: jest.fn().mockResolvedValue(undefined),
   getTodaysOrders: jest.fn().mockResolvedValue([]),
   markOrdersAsEmailed: jest.fn().mockResolvedValue(undefined),
   getLastOrderForCustomer: jest.fn().mockResolvedValue(null),
+  updateTodaysOrder: jest.fn().mockResolvedValue({ found: false, wasEmailed: false, mergedQuantities: {}, previousQuantities: {} }),
 }));
 
 jest.mock('../services/orderParser', () => ({
   parseOrder: jest.fn(),
+  parseOrderStrict: jest.fn().mockReturnValue(null),
   isAffirmativeReply: jest.fn().mockReturnValue(false),
   isRepeatOrderRequest: jest.fn().mockReturnValue(false),
+  parseCorrectionRequest: jest.fn().mockReturnValue(null),
+  preprocessCorrectionText: jest.fn((text: string) => text.replace(/\s+to\s+(\d)/g, ' $1')),
 }));
 
 jest.mock('../services/email', () => ({
   sendWarehouseEmail: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('../services/deliveryTab', () => ({
+  updateDeliveryTabOrder: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('../services/orderSummary', () => ({
+  formatOrderText: jest.fn().mockReturnValue('mock text'),
+  formatOrderHtml: jest.fn().mockReturnValue('<p>mock html</p>'),
+  getDeliveryDate: jest.fn().mockReturnValue(new Date('2026-02-18')),
+  formatDeliveryDate: jest.fn().mockReturnValue('2/18'),
+  deliveryDayName: jest.fn().mockReturnValue('Wednesday'),
 }));
 
 import express from 'express';
@@ -71,7 +97,7 @@ describe('POST /sms webhook', () => {
     expect(res.status).toBe(200);
     expect(mockSendSms).toHaveBeenCalledWith(
       '+15551111111',
-      expect.stringContaining('Thanks Alice'),
+      expect.stringContaining('Sounds good'),
     );
   });
 

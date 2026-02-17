@@ -266,7 +266,7 @@ export async function getLastOrderForCustomer(phone: string): Promise<OrderRow |
 
 // ── Normalize a phone string to E.164 (+1XXXXXXXXXX) ────────────
 
-function normalizePhone(raw: string): string {
+export function normalizePhone(raw: string): string {
   const digits = raw.replace(/\D/g, '');
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
@@ -279,4 +279,117 @@ export async function findCustomerByPhone(phone: string): Promise<Customer | und
   const normalized = normalizePhone(phone);
   const customers = await getCustomers();
   return customers.find((c) => normalizePhone(c.phone) === normalized);
+}
+
+// ── Look up a customer by partial name ──────────────────────────
+// Used for admin corrections like "change Waldo's toast to 15" where
+// "Waldo" is a partial match against "WALDO'S RESTAURANT" in the sheet.
+
+export async function findCustomerByNameHint(hint: string): Promise<{ customer: Customer; ambiguous?: string[] } | null> {
+  const customers = await getCustomers();
+  const lower = hint.toLowerCase().trim();
+
+  // Exact match first (case-insensitive)
+  const exact = customers.find((c) => c.name.toLowerCase().trim() === lower);
+  if (exact) return { customer: exact };
+
+  // Partial match — name contains the hint
+  const partial = customers.filter((c) => c.name.toLowerCase().includes(lower));
+  if (partial.length === 1) return { customer: partial[0] };
+  if (partial.length > 1) {
+    return { customer: partial[0], ambiguous: partial.map((c) => c.name) };
+  }
+
+  // Try the other direction — hint contains the customer name
+  const reverse = customers.filter((c) => lower.includes(c.name.toLowerCase().trim()));
+  if (reverse.length === 1) return { customer: reverse[0] };
+
+  return null;
+}
+
+// ── Update an existing order row in place ────────────────────────
+// Finds the most recent order for the given customer name + date,
+// merges in new quantities, and resets the emailed flag.
+
+export interface UpdateResult {
+  found: boolean;
+  wasEmailed: boolean;
+  mergedQuantities: Record<string, number>;
+  previousQuantities: Record<string, number>;
+}
+
+export async function updateTodaysOrder(
+  customerName: string,
+  dateStr: string,
+  newQuantities: Record<string, number>,
+): Promise<UpdateResult> {
+  const sheets = getClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: config.google.sheetId,
+    range: 'Orders!A2:ZZ',
+  });
+
+  const rows = res.data.values || [];
+  const emailedCol = 4 + config.products.length + 1; // after Raw Reply
+
+  // Find the last matching row for this customer today
+  let matchRowIndex = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (
+      rows[i][0] === dateStr &&
+      rows[i][2]?.toString().toLowerCase().trim() === customerName.toLowerCase().trim()
+    ) {
+      matchRowIndex = i;
+    }
+  }
+
+  if (matchRowIndex === -1) {
+    return { found: false, wasEmailed: false, mergedQuantities: {}, previousQuantities: {} };
+  }
+
+  const row = rows[matchRowIndex];
+  const previousQuantities: Record<string, number> = {};
+  config.products.forEach((p, i) => {
+    previousQuantities[p] = parseInt(row[4 + i] || '0', 10) || 0;
+  });
+  const wasEmailed = (row[emailedCol] || '').toUpperCase() === 'Y';
+
+  // Merge: keep existing quantities, override with the new ones
+  const mergedQuantities: Record<string, number> = { ...previousQuantities };
+  for (const [product, qty] of Object.entries(newQuantities)) {
+    mergedQuantities[product] = qty;
+  }
+
+  // Build cell updates
+  const sheetRow = matchRowIndex + 2; // +2: row 1 = header, i is 0-indexed
+  const updates: { range: string; values: (string | number)[][] }[] = [];
+
+  for (let i = 0; i < config.products.length; i++) {
+    const col = columnLetter(4 + i);
+    updates.push({
+      range: `Orders!${col}${sheetRow}`,
+      values: [[mergedQuantities[config.products[i]] || 0]],
+    });
+  }
+
+  // Reset the emailed flag so the 11:30 job will re-send with corrected numbers
+  updates.push({
+    range: `Orders!${columnLetter(emailedCol)}${sheetRow}`,
+    values: [['']],
+  });
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: config.google.sheetId,
+    requestBody: {
+      valueInputOption: 'RAW',
+      data: updates,
+    },
+  });
+
+  logger.info(`Updated order for ${customerName} on ${dateStr}`, {
+    previousQuantities,
+    mergedQuantities,
+  });
+
+  return { found: true, wasEmailed, mergedQuantities, previousQuantities };
 }

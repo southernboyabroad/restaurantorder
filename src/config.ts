@@ -18,6 +18,7 @@ export const config = {
   logLevel: optional('LOG_LEVEL', 'info'),
   schedulerEnabled: optional('SCHEDULER_ENABLED', 'false').toLowerCase() === 'true',
   testPhoneNumber: optional('TEST_PHONE_NUMBER', ''),
+  adminPhoneNumber: optional('ADMIN_PHONE_NUMBER', ''),
 
   twilio: {
     accountSid: required('TWILIO_ACCOUNT_SID'),
