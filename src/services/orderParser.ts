@@ -90,7 +90,7 @@ function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export function parseOrderStrict(text: string, defaultProduct?: string): ParsedOrder | null {
+export function parseOrderStrict(text: string, defaultProduct?: string, productOrder?: string[]): ParsedOrder | null {
   const quantities: Record<string, number> = {};
   let matchCount = 0;
 
@@ -170,6 +170,24 @@ export function parseOrderStrict(text: string, defaultProduct?: string): ParsedO
     }
   }
 
+  // If no products matched but the message contains bare numbers, try positional mapping.
+  // A customer with productOrder: ["toast", "4-inch"] who texts "4 and 3" gets
+  // { toast: 4, "4-inch": 3 }.
+  if (matchCount === 0 && productOrder && productOrder.length > 0) {
+    const bareNumbers = [...normalized.matchAll(/\b(\d+)\b/g)].map((m) => parseInt(m[1], 10));
+    if (bareNumbers.length > 0 && bareNumbers.length <= productOrder.length) {
+      for (let i = 0; i < bareNumbers.length; i++) {
+        quantities[productOrder[i]] = (quantities[productOrder[i]] || 0) + bareNumbers[i];
+      }
+      logger.info('Bare numbers matched to product order', {
+        bareNumbers,
+        productOrder,
+        quantities,
+      });
+      return { quantities, confident: true };
+    }
+  }
+
   // If no products matched but the message is just a number (e.g. "12" or "I'll take 12"),
   // and the customer has a default product, assume they mean that product.
   if (matchCount === 0 && defaultProduct) {
@@ -238,9 +256,9 @@ If a product isn't mentioned, omit it (don't set it to 0).`;
 
 // ── Combined parser: strict first, then AI fallback ─────────────
 
-export async function parseOrder(text: string, defaultProduct?: string): Promise<ParsedOrder> {
+export async function parseOrder(text: string, defaultProduct?: string, productOrder?: string[]): Promise<ParsedOrder> {
   // Try strict regex first (free and fast)
-  const strict = parseOrderStrict(text, defaultProduct);
+  const strict = parseOrderStrict(text, defaultProduct, productOrder);
   if (strict) {
     logger.info('Order parsed with strict parser', { result: strict });
     return strict;

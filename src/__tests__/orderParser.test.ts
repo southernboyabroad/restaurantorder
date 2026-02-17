@@ -270,4 +270,53 @@ describe('parseOrderStrict', () => {
     expect(result).not.toBeNull();
     expect(result!.quantities['4-inch']).toBe(8);  // 3 + 5
   });
+
+  // ── Product order (positional bare-number mapping) tests ─────
+  it('maps "4 and 3" positionally with productOrder [toast, 4-inch]', () => {
+    const result = parseOrderStrict('4 and 3', undefined, ['toast', '4-inch']);
+    expect(result).not.toBeNull();
+    expect(result!.quantities.toast).toBe(4);
+    expect(result!.quantities['4-inch']).toBe(3);
+    expect(result!.confident).toBe(true);
+  });
+
+  it('maps "10, 5" positionally with productOrder [toast, 4-inch]', () => {
+    const result = parseOrderStrict('10, 5', undefined, ['toast', '4-inch']);
+    expect(result).not.toBeNull();
+    expect(result!.quantities.toast).toBe(10);
+    expect(result!.quantities['4-inch']).toBe(5);
+  });
+
+  it('maps three positional numbers with productOrder [toast, 4-inch, long]', () => {
+    const result = parseOrderStrict('4 and 3 and 2', undefined, ['toast', '4-inch', 'long']);
+    expect(result).not.toBeNull();
+    expect(result!.quantities.toast).toBe(4);
+    expect(result!.quantities['4-inch']).toBe(3);
+    expect(result!.quantities.long).toBe(2);
+  });
+
+  it('does NOT use productOrder when explicit product names are given', () => {
+    const result = parseOrderStrict('toast 10', undefined, ['toast', '4-inch']);
+    expect(result).not.toBeNull();
+    expect(result!.quantities.toast).toBe(10);
+    expect(result!.quantities['4-inch']).toBeUndefined();
+  });
+
+  it('maps a single bare number to first product in productOrder when no defaultProduct', () => {
+    const result = parseOrderStrict('12', undefined, ['toast', '4-inch']);
+    expect(result).not.toBeNull();
+    expect(result!.quantities.toast).toBe(12);
+  });
+
+  it('prefers productOrder over defaultProduct for multiple bare numbers', () => {
+    const result = parseOrderStrict('4 and 3', '4-inch', ['toast', '4-inch']);
+    expect(result).not.toBeNull();
+    expect(result!.quantities.toast).toBe(4);
+    expect(result!.quantities['4-inch']).toBe(3);
+  });
+
+  it('ignores productOrder when bare numbers exceed product count', () => {
+    const result = parseOrderStrict('4 and 3 and 2', undefined, ['toast']);
+    expect(result).toBeNull();
+  });
 });

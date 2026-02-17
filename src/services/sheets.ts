@@ -3,7 +3,7 @@ import { config } from '../config';
 import logger from '../logger';
 
 // ── Sheet layout ────────────────────────────────────────────────
-// Sheet "Customers"  → columns: Name | Phone | Default Product (optional) | Route (optional)
+// Sheet "Customers"  → columns: Name | Phone | Default Product (optional) | Route (optional) | Product Order (optional)
 // Sheet "Orders"     → columns: Date | Phone | Name | Route | product1 | product2 | … | Raw Reply
 // ────────────────────────────────────────────────────────────────
 
@@ -12,6 +12,7 @@ export interface Customer {
   phone: string; // E.164 format, e.g. +15551234567
   defaultProduct?: string; // canonical product name, e.g. "4-inch"
   route?: string; // delivery route number, e.g. "25252"
+  productOrder?: string[]; // positional product mapping, e.g. ["toast", "4-inch"]
 }
 
 export interface OrderRow {
@@ -53,7 +54,7 @@ export async function getCustomers(): Promise<Customer[]> {
   const sheets = getClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: config.google.sheetId,
-    range: 'Customers!A2:D', // skip header; col C = default product, col D = route
+    range: 'Customers!A2:E', // skip header; col C = default product, col D = route, col E = product order
   });
 
   const rows = res.data.values || [];
@@ -64,6 +65,9 @@ export async function getCustomers(): Promise<Customer[]> {
       phone: row[1].trim(),
       defaultProduct: row[2]?.trim().toLowerCase() || undefined,
       route: row[3]?.trim() || undefined,
+      productOrder: row[4]
+        ? row[4].split(',').map((s: string) => s.trim().toLowerCase()).filter(Boolean)
+        : undefined,
     }));
 
   logger.info(`Loaded ${customers.length} customers from Sheets`);
