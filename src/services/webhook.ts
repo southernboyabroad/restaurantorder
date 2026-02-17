@@ -128,7 +128,10 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     const itemLines = Object.entries(parsed.quantities)
       .filter(([, qty]) => qty > 0)
       .map(([product, qty]) => {
-        const display = product.replace(/_/g, ' ').replace(/\blong\b/gi, 'hot dog');
+        const display = product
+          .replace(/_/g, ' ')
+          .replace(/\blong\b/gi, 'hot dog')
+          .replace(/\binstitutional sandwich\b/gi, 'sandwich');
         return `${display} - ${qty}`;
       })
       .join('\n');

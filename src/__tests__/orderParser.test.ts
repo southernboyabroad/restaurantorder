@@ -141,6 +141,12 @@ describe('parseOrderStrict', () => {
     expect(result!.quantities.institutional_sandwich).toBe(7);
   });
 
+  it('maps "dinner" to dinner_rolls', () => {
+    const result = parseOrderStrict('dinner 30');
+    expect(result).not.toBeNull();
+    expect(result!.quantities.dinner_rolls).toBe(30);
+  });
+
   it('handles mixed aliases and canonical names', () => {
     const result = parseOrderStrict('toast 10, bun 5, hot dog 8, sandwich 3');
     expect(result).not.toBeNull();
