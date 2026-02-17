@@ -57,6 +57,40 @@ export function buildOrderPromptMessage(
   return 'Good morning... what can I get you for your next delivery?';
 }
 
+/**
+ * Build the confirmation SMS sent after an order is recorded, based on the
+ * customer's route and the current day of the week.
+ *
+ * Day-of-week uses JS convention: 0=Sun … 6=Sat.
+ */
+export function buildConfirmationMessage(
+  route: string | undefined,
+  dayOfWeek?: number,
+): string {
+  const dow = dayOfWeek ?? new Date().getDay();
+
+  const confirmMap: Record<string, Record<number, string>> = {
+    '25252': {
+      3: 'Sounds good... Have a great afternoon.',   // Wednesday
+      5: 'Sounds good... Have a great afternoon.',   // Friday
+      6: 'Sounds good....Have a fantastic weekend.',  // Saturday
+    },
+    '25248': {
+      3: 'Sounds good... Have a great afternoon.',   // Wednesday
+      6: 'Sounds good... Have a great weekend.',      // Saturday
+    },
+  };
+
+  const routeMessages = route ? confirmMap[route] : undefined;
+  if (routeMessages !== undefined) {
+    const msg = routeMessages[dow];
+    if (msg) return msg;
+  }
+
+  // Fallback for unknown routes or unexpected days
+  return 'Sounds good... Have a great afternoon.';
+}
+
 export function validateTwilioWebhook(
   authToken: string,
   twilioSignature: string,

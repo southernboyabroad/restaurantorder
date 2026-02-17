@@ -1,6 +1,6 @@
 import express, { Request, Response } from 'express';
 import { config } from '../config';
-import { validateTwilioWebhook, buildOrderPromptMessage } from './sms';
+import { validateTwilioWebhook, buildOrderPromptMessage, buildConfirmationMessage } from './sms';
 import { findCustomerByPhone, appendOrder, markOrdersAsEmailed } from './sheets';
 import { parseOrder, isAffirmativeReply } from './orderParser';
 import { sendSms } from './sms';
@@ -125,14 +125,13 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     }
 
     // Build a confirmation
-    const items = Object.entries(parsed.quantities)
-      .filter(([, qty]) => qty > 0)
-      .map(([product, qty]) => `${product.replace(/_/g, ' ')} ×${qty}`)
-      .join(', ');
-
-    let confirmationMsg = `Thanks ${customer.name}! Your order is recorded:\n${items}`;
+    let confirmationMsg = buildConfirmationMessage(customer.route);
     if (!parsed.confident) {
-      confirmationMsg += '\n\n⚠️ We interpreted your message with AI — please double-check and reply again if anything is wrong.';
+      const items = Object.entries(parsed.quantities)
+        .filter(([, qty]) => qty > 0)
+        .map(([product, qty]) => `${product.replace(/_/g, ' ')} ×${qty}`)
+        .join(', ');
+      confirmationMsg += `\n\nWe recorded: ${items}\n⚠️ We interpreted your message with AI — please double-check and reply again if anything is wrong.`;
     }
 
     await sendSms(from, confirmationMsg);
