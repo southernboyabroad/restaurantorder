@@ -6,7 +6,7 @@ jest.mock('../config', () => ({
   },
 }));
 
-import { parseOrderStrict, isAffirmativeReply } from '../services/orderParser';
+import { parseOrderStrict, isAffirmativeReply, parseCorrectionRequest, preprocessCorrectionText } from '../services/orderParser';
 
 describe('parseOrderStrict', () => {
   it('parses "product qty" format', () => {
@@ -382,5 +382,55 @@ describe('isAffirmativeReply', () => {
 
   it('does NOT match numbers', () => {
     expect(isAffirmativeReply('12')).toBe(false);
+  });
+});
+
+describe('parseCorrectionRequest', () => {
+  it('detects "change my toast to 15"', () => {
+    const r = parseCorrectionRequest('change my toast to 15');
+    expect(r).not.toBeNull();
+    expect(r!.customerNameHint).toBeUndefined();
+    expect(r!.orderText).toBe('toast to 15');
+  });
+
+  it('detects admin correction: "change Waldo\'s toast to 15"', () => {
+    const r = parseCorrectionRequest("change Waldo's toast to 15");
+    expect(r).not.toBeNull();
+    expect(r!.customerNameHint).toBe('Waldo');
+    expect(r!.orderText).toBe('toast to 15');
+  });
+
+  it('detects correction with preamble: "Oh crap, Change 3 trays sandwich to 4 trays sandwich"', () => {
+    const r = parseCorrectionRequest('Oh crap, Change 3 trays sandwich to 4 trays sandwich');
+    expect(r).not.toBeNull();
+    expect(r!.orderText).toBe('3 trays sandwich to 4 trays sandwich');
+  });
+
+  it('detects "Hey, update my toast to 10"', () => {
+    const r = parseCorrectionRequest('Hey, update my toast to 10');
+    expect(r).not.toBeNull();
+    expect(r!.orderText).toBe('toast to 10');
+  });
+
+  it('returns null for regular orders', () => {
+    expect(parseCorrectionRequest('toast 10, 4-inch 5')).toBeNull();
+  });
+
+  it('returns null for "hello"', () => {
+    expect(parseCorrectionRequest('hello')).toBeNull();
+  });
+});
+
+describe('preprocessCorrectionText', () => {
+  it('converts "toast to 15" → "toast 15"', () => {
+    expect(preprocessCorrectionText('toast to 15')).toBe('toast 15');
+  });
+
+  it('handles "3 trays sandwich to 4 trays sandwich" — keeps only the new quantity', () => {
+    expect(preprocessCorrectionText('3 trays sandwich to 4 trays sandwich')).toBe('4 trays sandwich');
+  });
+
+  it('handles "10 toast to 5 toast"', () => {
+    expect(preprocessCorrectionText('10 toast to 5 toast')).toBe('5 toast');
   });
 });

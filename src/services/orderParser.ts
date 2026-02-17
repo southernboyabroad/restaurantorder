@@ -275,7 +275,8 @@ export interface CorrectionRequest {
   orderText: string;         // the portion describing new quantities
 }
 
-const CORRECTION_PREFIX = /^(change|update|fix|correct)\s+(that\s+)?/i;
+// Allow optional preamble before the keyword, e.g. "Oh crap, change ..." or "Hey, update ..."
+const CORRECTION_PREFIX = /^(.*?\b)?(change|update|fix|correct)\s+(that\s+)?/i;
 
 export function parseCorrectionRequest(text: string): CorrectionRequest | null {
   const trimmed = text.trim();
@@ -313,7 +314,13 @@ export function parseCorrectionRequest(text: string): CorrectionRequest | null {
 }
 
 // Preprocess correction text so "toast to 15" becomes "toast 15"
+// Also handles "3 trays sandwich to 4 trays sandwich" — strip the "old value to" part
 export function preprocessCorrectionText(text: string): string {
+  // Pattern: "<old qty> <product> to <new qty> <product>" — keep only the part after "to"
+  const oldToNew = text.match(/^\d+\s+.+?\s+to\s+(\d+\s+.+)$/i);
+  if (oldToNew) {
+    return oldToNew[1];
+  }
   return text.replace(/\s+to\s+(\d)/g, ' $1');
 }
 
