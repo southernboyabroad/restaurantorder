@@ -297,6 +297,10 @@ export async function findCustomerByNameHint(hint: string): Promise<{ customer: 
   const partial = customers.filter((c) => c.name.toLowerCase().includes(lower));
   if (partial.length === 1) return { customer: partial[0] };
   if (partial.length > 1) {
+    // If all matches share the same name (e.g. same restaurant, multiple phone numbers),
+    // treat it as a single match — the order row uses the name, not the phone.
+    const uniqueNames = new Set(partial.map((c) => c.name.toLowerCase().trim()));
+    if (uniqueNames.size === 1) return { customer: partial[0] };
     return { customer: partial[0], ambiguous: partial.map((c) => c.name) };
   }
 
