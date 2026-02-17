@@ -13,6 +13,7 @@ export interface ParsedOrder {
 const PRODUCT_ALIASES: Record<string, string> = {
   'toast': 'toast',
   'texas toast': 'toast',
+  'texas': 'toast',
   '4-inch': '4-inch',
   '4-in': '4-inch',
   'four-inch': '4-inch',
@@ -248,7 +249,7 @@ export async function parseOrderWithAI(text: string): Promise<ParsedOrder> {
   const systemPrompt = `You are an order-parsing assistant. The customer texted their food order.
 Extract quantities for each product. Available products: ${config.products.join(', ')}.
 Important synonyms — always map these to the canonical product name:
-- "texas toast" → toast
+- "texas toast", "texas" → toast
 - "four-inch hamburger bun", "four-inch bun", "bun", "four-inch" → 4-inch
 - "hot dog" → long
 - "sandwich", "three-inch bun" → institutional_sandwich
