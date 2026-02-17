@@ -6,7 +6,7 @@ jest.mock('../config', () => ({
   },
 }));
 
-import { parseOrderStrict } from '../services/orderParser';
+import { parseOrderStrict, isAffirmativeReply } from '../services/orderParser';
 
 describe('parseOrderStrict', () => {
   it('parses "product qty" format', () => {
@@ -318,5 +318,63 @@ describe('parseOrderStrict', () => {
   it('ignores productOrder when bare numbers exceed product count', () => {
     const result = parseOrderStrict('4 and 3 and 2', undefined, ['toast']);
     expect(result).toBeNull();
+  });
+});
+
+describe('isAffirmativeReply', () => {
+  it('detects "Yes"', () => {
+    expect(isAffirmativeReply('Yes')).toBe(true);
+  });
+
+  it('detects "Okay"', () => {
+    expect(isAffirmativeReply('Okay')).toBe(true);
+  });
+
+  it('detects "yes" (case insensitive)', () => {
+    expect(isAffirmativeReply('yes')).toBe(true);
+  });
+
+  it('detects "Sure"', () => {
+    expect(isAffirmativeReply('Sure')).toBe(true);
+  });
+
+  it('detects "Yeah"', () => {
+    expect(isAffirmativeReply('Yeah')).toBe(true);
+  });
+
+  it('detects "Sounds good"', () => {
+    expect(isAffirmativeReply('Sounds good')).toBe(true);
+  });
+
+  it('detects "Please"', () => {
+    expect(isAffirmativeReply('Please')).toBe(true);
+  });
+
+  it('detects "Ok!"', () => {
+    expect(isAffirmativeReply('Ok!')).toBe(true);
+  });
+
+  it('detects "Yes please"', () => {
+    expect(isAffirmativeReply('Yes please')).toBe(true);
+  });
+
+  it('detects thumbs up emoji', () => {
+    expect(isAffirmativeReply('👍')).toBe(true);
+  });
+
+  it('does NOT match actual orders', () => {
+    expect(isAffirmativeReply('toast 10, 4-inch 5')).toBe(false);
+  });
+
+  it('does NOT match long messages containing "yes"', () => {
+    expect(isAffirmativeReply('Yes I would like to order 10 toast and 5 long rolls please')).toBe(false);
+  });
+
+  it('does NOT match random text', () => {
+    expect(isAffirmativeReply('hello how are you')).toBe(false);
+  });
+
+  it('does NOT match numbers', () => {
+    expect(isAffirmativeReply('12')).toBe(false);
   });
 });

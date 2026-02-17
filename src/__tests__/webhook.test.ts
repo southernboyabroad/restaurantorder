@@ -30,6 +30,7 @@ jest.mock('../services/sheets', () => ({
 
 jest.mock('../services/orderParser', () => ({
   parseOrder: jest.fn(),
+  isAffirmativeReply: jest.fn().mockReturnValue(false),
 }));
 
 jest.mock('../services/email', () => ({

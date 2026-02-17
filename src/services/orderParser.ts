@@ -207,6 +207,29 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   return { quantities, confident: true };
 }
 
+// ── Affirmative reply detection ──────────────────────────────────
+// Detects replies like "Yes", "Okay", "Sure" that confirm interest
+// but don't contain actual order quantities.
+
+const AFFIRMATIVE_PATTERNS = [
+  /^\s*(yes|yeah|yep|yup|yea|ya|yah)\b/i,
+  /^\s*(ok|okay|okey|ok!|okay!)\b/i,
+  /^\s*(sure|sure!)\b/i,
+  /^\s*(please|pls)\b/i,
+  /^\s*(correct|right|that's right|thats right)\b/i,
+  /^\s*(sounds good|sounds great|perfect)\b/i,
+  /^\s*(absolutely|definitely|of course)\b/i,
+  /^\s*(will do|go ahead|let's do it|lets do it)\b/i,
+  /^\s*(👍|✅|👌)\s*$/,
+];
+
+export function isAffirmativeReply(text: string): boolean {
+  const trimmed = text.trim();
+  // Only match short messages — a long reply with "yes" embedded is probably an order attempt
+  if (trimmed.length > 40) return false;
+  return AFFIRMATIVE_PATTERNS.some((p) => p.test(trimmed));
+}
+
 // ── AI-assisted parser (OpenAI fallback) ────────────────────────
 
 export async function parseOrderWithAI(text: string): Promise<ParsedOrder> {

@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import { config } from '../config';
 import { validateTwilioWebhook, buildOrderPromptMessage } from './sms';
 import { findCustomerByPhone, appendOrder, markOrdersAsEmailed } from './sheets';
-import { parseOrder } from './orderParser';
+import { parseOrder, isAffirmativeReply } from './orderParser';
 import { sendSms } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
 import { formatOrderText, formatOrderHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
@@ -58,6 +58,24 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     const hasItems = Object.values(parsed.quantities).some((qty) => qty > 0);
 
     if (!hasItems) {
+      // Check if this is an affirmative reply like "Yes", "Okay", "Sure"
+      if (isAffirmativeReply(body)) {
+        logger.info('Affirmative reply detected — asking for quantities', { from, body });
+        let followUp: string;
+        if (customer.productOrder && customer.productOrder.length > 0) {
+          const exampleQty = customer.productOrder.map(() => '5').join(' and ');
+          const exampleLabels = customer.productOrder.join(', ');
+          followUp = `Great! Just reply with your quantities for ${exampleLabels}.\nFor example: "${exampleQty}"`;
+        } else if (customer.defaultProduct) {
+          followUp = `Great! Just reply with how many ${customer.defaultProduct} you need.\nFor example: "10"`;
+        } else {
+          followUp = `Great! Please reply with your order, like:\ntoast 10, 4-inch 5, long 20`;
+        }
+        await sendSms(from, followUp);
+        res.type('text/xml').send('<Response></Response>');
+        return;
+      }
+
       // Could not parse anything useful
       logger.warn('Could not parse order from reply', { from, body });
       await sendSms(
