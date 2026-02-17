@@ -260,23 +260,9 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       // Non-fatal — the flat Orders sheet already has the order
     }
 
-    // ── Send warehouse email immediately for THIS order only ──
-    try {
-      const delivery = getDeliveryDate();
-      const deliveryDateStr = formatDeliveryDate(delivery);
-      const dayName = deliveryDayName(delivery);
-      const routeLabel = customer.route || 'Unassigned';
-      const subject = `ADDITIONS to Route ${routeLabel}- ${deliveryDateStr}`;
-      const textBody = formatOrderText(parsed.quantities, dayName);
-      const htmlBody = formatOrderHtml(parsed.quantities, dayName);
-
-      await sendWarehouseEmail(subject, textBody, htmlBody);
-      await markOrdersAsEmailed(dateStr);
-      logger.info('Warehouse email sent for order', { customer: customer.name, route: routeLabel });
-    } catch (emailErr) {
-      logger.error('Failed to send warehouse email for order', { error: emailErr, customer: customer.name });
-      // Non-fatal — the order is still recorded in the sheet
-    }
+    // Warehouse email is sent by the 11:30 AM scheduler (afternoonJob),
+    // not on each individual SMS. The /trigger-email endpoint can be used
+    // to manually send any un-emailed orders if needed.
 
     // Build a confirmation
     const itemLines = Object.entries(parsed.quantities)
