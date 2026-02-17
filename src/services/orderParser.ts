@@ -104,8 +104,12 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   const quantities: Record<string, number> = {};
   let matchCount = 0;
 
-  // Normalize: lowercase, underscores to spaces, then convert word-numbers to digits
-  const normalized = wordsToDigits(text.toLowerCase().replace(/_/g, ' '));
+  // Normalize: lowercase, underscores to spaces, strip tray units, then convert word-numbers to digits
+  let cleaned = text.toLowerCase().replace(/_/g, ' ');
+  // "a tray of toast" → "1 toast", "3 trays of toast" → "3 toast"
+  cleaned = cleaned.replace(/\ba\s+trays?\s+of\s+/gi, '1 ');
+  cleaned = cleaned.replace(/\btrays?\s+of\s+/gi, '');
+  const normalized = wordsToDigits(cleaned);
 
   // Build a list of (name-to-match, canonical-product) pairs.
   // Aliases first (longer phrases matched before shorter ones), then bare product names.
