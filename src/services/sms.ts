@@ -111,13 +111,13 @@ export function buildConfirmationMessage(
 
   const confirmMap: Record<string, Record<number, string>> = {
     '25252': {
-      3: 'Sounds good... Have a great afternoon.',   // Wednesday
-      5: 'Sounds good... Have a great afternoon.',   // Friday
-      6: 'Sounds good....Have a fantastic weekend.',  // Saturday
+      3: 'Sounds good... Have a great afternoon!',   // Wednesday
+      5: 'Sounds good... Have a great afternoon!',   // Friday
+      6: 'Sounds good....Have a fantastic weekend!',  // Saturday
     },
     '25248': {
-      3: 'Sounds good... Have a great afternoon.',   // Wednesday
-      6: 'Sounds good... Have a great weekend.',      // Saturday
+      3: 'Sounds good... Have a great afternoon!',   // Wednesday
+      6: 'Sounds good... Have a great weekend!',      // Saturday
     },
   };
 
@@ -128,7 +128,7 @@ export function buildConfirmationMessage(
   }
 
   // Fallback for unknown routes or unexpected days
-  return 'Sounds good... Have a great afternoon.';
+  return 'Sounds good... Have a great afternoon!';
 }
 
 export function validateTwilioWebhook(

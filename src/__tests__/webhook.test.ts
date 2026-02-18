@@ -19,9 +19,10 @@ jest.mock('../config', () => ({
 
 jest.mock('../services/sms', () => ({
   sendSms: jest.fn().mockResolvedValue('SM_test'),
+  forwardToAdmin: jest.fn().mockResolvedValue(undefined),
   validateTwilioWebhook: jest.fn().mockReturnValue(true),
   buildOrderPromptMessage: jest.fn().mockReturnValue(null),
-  buildConfirmationMessage: jest.fn().mockReturnValue('Sounds good... Have a great afternoon.'),
+  buildConfirmationMessage: jest.fn().mockReturnValue('Sounds good... Have a great afternoon!'),
 }));
 
 jest.mock('../services/sheets', () => ({

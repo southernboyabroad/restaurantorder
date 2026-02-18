@@ -310,6 +310,11 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       confirmationMsg += '\n\n⚠️ We interpreted your message with AI — please double-check and reply again if anything is wrong.';
     }
 
+    // Short delay so the reply feels personal rather than instant/automated
+    if (process.env.NODE_ENV !== 'test') {
+      await new Promise((resolve) => setTimeout(resolve, 15_000));
+    }
+
     await sendSms(from, confirmationMsg);
     await forwardToAdmin('out', customer.name, confirmationMsg, from);
 
