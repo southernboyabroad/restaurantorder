@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import { config } from '../config';
 import { validateTwilioWebhook, buildOrderPromptMessage, buildConfirmationMessage } from './sms';
-import { findCustomerByPhone, findCustomerByNameHint, normalizePhone, appendOrder, markOrdersAsEmailed, getLastOrderForCustomer, updateTodaysOrder, Customer } from './sheets';
+import { findCustomerByPhone, findCustomerByNameHint, normalizePhone, appendOrder, markOrdersAsEmailed, getLastOrderForCustomer, getTodaysOrders, updateTodaysOrder, Customer } from './sheets';
 import { parseOrder, parseOrderStrict, isAffirmativeReply, isRepeatOrderRequest, parseCorrectionRequest, preprocessCorrectionText } from './orderParser';
 import { sendSms, forwardToAdmin } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
@@ -201,6 +201,22 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       return;
     }
 
+    // ── Already ordered today? Stay silent. ────────────────────────
+    // Once a customer has placed an order and received their confirmation,
+    // any follow-up ("Thanks!", "Have a great day", etc.) should NOT
+    // trigger another bot reply.  Corrections are already handled above.
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const todaysOrders = await getTodaysOrders(dateStr);
+    const alreadyOrdered = todaysOrders.some(
+      (o) => o.name.toLowerCase() === customer.name.toLowerCase(),
+    );
+
+    if (alreadyOrdered) {
+      logger.info('Customer already ordered today — staying silent', { from, name: customer.name, body });
+      res.type('text/xml').send('<Response></Response>');
+      return;
+    }
+
     // Parse the order (pass default product and product order for bare-number mapping)
     const parsed = await parseOrder(body, customer.defaultProduct, customer.productOrder);
 
@@ -255,7 +271,6 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     }
 
     // Record the order
-    const dateStr = new Date().toISOString().slice(0, 10);
     await appendOrder({
       date: dateStr,
       phone: customer.phone,
