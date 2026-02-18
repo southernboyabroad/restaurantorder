@@ -138,6 +138,23 @@ ${productLines}
 </body></html>`;
 }
 
+// ── Group a given set of orders by route ────────────────────────
+
+export function groupOrdersByRoute(dateStr: string, orders: OrderRow[]): OrderSummary[] {
+  const byRoute = new Map<string, OrderRow[]>();
+  for (const order of orders) {
+    const route = order.route || '';
+    if (!byRoute.has(route)) byRoute.set(route, []);
+    byRoute.get(route)!.push(order);
+  }
+
+  const summaries: OrderSummary[] = [];
+  for (const [route, routeOrders] of byRoute) {
+    summaries.push(buildSummary(dateStr, route, routeOrders));
+  }
+  return summaries;
+}
+
 // ── Single-order formatters (one email per SMS) ─────────────────
 
 export function formatOrderText(

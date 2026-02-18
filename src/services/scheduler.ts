@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { getCustomers, getTodaysOrders, markOrdersAsEmailed } from './sheets';
 import { sendSms, buildOrderPromptMessage } from './sms';
-import { formatOrderText, formatOrderHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
+import { formatSummaryText, formatSummaryHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName, groupOrdersByRoute } from './orderSummary';
 import { sendWarehouseEmail } from './email';
 import { ensureOrdersSheet } from './sheets';
 import { ensureDeliveryTab } from './deliveryTab';
@@ -142,15 +142,16 @@ async function afternoonJob(): Promise<void> {
       return;
     }
 
-    // Send one email per individual order — never cumulate
-    for (const order of unsent) {
-      const routeLabel = order.route || 'Unassigned';
+    // Aggregate unsent orders by route and send one totaled email per route
+    const routeSummaries = groupOrdersByRoute(dateStr, unsent);
+    for (const summary of routeSummaries) {
+      const routeLabel = summary.route || 'Unassigned';
       const subject = `ADDITIONS to Route ${routeLabel}- ${deliveryDateStr}`;
-      const textBody = formatOrderText(order.quantities, dayName);
-      const htmlBody = formatOrderHtml(order.quantities, dayName);
+      const textBody = formatSummaryText(summary, dayName);
+      const htmlBody = formatSummaryHtml(summary, dayName);
 
       await sendWarehouseEmail(subject, textBody, htmlBody);
-      logger.info(`Catch-up email sent for ${order.name} on route ${routeLabel}`);
+      logger.info(`Aggregated email sent for route ${routeLabel} (${summary.orderCount} orders)`);
     }
 
     await markOrdersAsEmailed(dateStr);
