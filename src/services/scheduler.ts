@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { getCustomers, getTodaysOrders, markOrdersAsEmailed } from './sheets';
-import { sendSms, buildOrderPromptMessage } from './sms';
+import { sendSms, buildOrderPromptMessage, forwardToAdmin } from './sms';
 import { formatSummaryText, formatSummaryHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName, groupOrdersByRoute } from './orderSummary';
 import { sendWarehouseEmail } from './email';
 import { ensureOrdersSheet } from './sheets';
@@ -58,7 +58,10 @@ async function morningJob(): Promise<void> {
       }
 
       const results = await Promise.allSettled(
-        toSend.map(({ customer, message }) => sendSms(customer.phone, message)),
+        toSend.map(async ({ customer, message }) => {
+          await sendSms(customer.phone, message);
+          await forwardToAdmin('out', customer.name, message, customer.phone);
+        }),
       );
 
       const succeeded = results.filter((r) => r.status === 'fulfilled').length;
@@ -107,7 +110,10 @@ async function reminderJob(): Promise<void> {
       logger.info('Reminder SMS test complete: 1 sent to test number');
     } else {
       const results = await Promise.allSettled(
-        needsReminder.map((c) => sendSms(c.phone, 'Reminder')),
+        needsReminder.map(async (c) => {
+          await sendSms(c.phone, 'Reminder');
+          await forwardToAdmin('out', c.name, 'Reminder', c.phone);
+        }),
       );
 
       const succeeded = results.filter((r) => r.status === 'fulfilled').length;

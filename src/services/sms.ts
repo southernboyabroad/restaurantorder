@@ -20,6 +20,46 @@ export async function sendSms(to: string, body: string): Promise<string> {
 }
 
 /**
+ * Forward a copy of an SMS exchange to the admin phone number so
+ * the owner can follow along in real-time.
+ *
+ * direction: "out" for messages the bot sent, "in" for customer replies.
+ * Does nothing if ADMIN_PHONE_NUMBER is not set or if the message
+ * was already sent to/from the admin number (avoids loops).
+ */
+export async function forwardToAdmin(
+  direction: 'in' | 'out',
+  customerName: string,
+  body: string,
+  customerPhone?: string,
+): Promise<void> {
+  const adminPhone = config.adminPhoneNumber;
+  if (!adminPhone) return;
+
+  // Don't forward messages that are already to/from the admin
+  if (customerPhone && normalizeForCompare(customerPhone) === normalizeForCompare(adminPhone)) return;
+
+  const arrow = direction === 'out' ? '→' : '←';
+  const forwardBody = `[${arrow} ${customerName}]\n${body}`;
+
+  try {
+    await client.messages.create({
+      body: forwardBody,
+      from: config.twilio.phoneNumber,
+      to: adminPhone,
+    });
+    logger.info(`Forwarded SMS to admin (${direction} ${customerName})`);
+  } catch (err) {
+    // Non-fatal — don't let forwarding failures break the main flow
+    logger.error('Failed to forward SMS to admin', { error: err });
+  }
+}
+
+function normalizeForCompare(phone: string): string {
+  return phone.replace(/\D/g, '').slice(-10);
+}
+
+/**
  * Build the order prompt SMS for a customer based on their route and the
  * current day of the week.  Returns `null` when no text should be sent
  * (e.g. route 25248 on Fridays).

@@ -3,7 +3,7 @@ import { config } from '../config';
 import { validateTwilioWebhook, buildOrderPromptMessage, buildConfirmationMessage } from './sms';
 import { findCustomerByPhone, findCustomerByNameHint, normalizePhone, appendOrder, markOrdersAsEmailed, getLastOrderForCustomer, updateTodaysOrder, Customer } from './sheets';
 import { parseOrder, parseOrderStrict, isAffirmativeReply, isRepeatOrderRequest, parseCorrectionRequest, preprocessCorrectionText } from './orderParser';
-import { sendSms } from './sms';
+import { sendSms, forwardToAdmin } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
 import { formatOrderText, formatOrderHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
 import { sendWarehouseEmail } from './email';
@@ -125,6 +125,7 @@ async function handleCorrection(
   }
 
   await sendSms(from, msg);
+  await forwardToAdmin('out', targetCustomer.name, msg, from);
   logger.info('Order correction completed', {
     correctedBy: from,
     customer: targetCustomer.name,
@@ -179,6 +180,10 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     const customer = await findCustomerByPhone(from);
     const isAdmin = !!config.adminPhoneNumber && normalizePhone(from) === normalizePhone(config.adminPhoneNumber);
 
+    // Forward inbound SMS to admin so they can follow along
+    const customerLabel = customer?.name || 'Unknown';
+    await forwardToAdmin('in', customerLabel, body, from);
+
     // ── Check for order correction ──────────────────────────────
     const correction = parseCorrectionRequest(body);
     if (correction) {
@@ -189,7 +194,9 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     if (!customer) {
       logger.warn('Received SMS from unknown number', { from });
       // Reply politely
-      await sendSms(from, 'Sorry, we don\'t have your number on file. Please contact us to get set up.');
+      const unknownReply = 'Sorry, we don\'t have your number on file. Please contact us to get set up.';
+      await sendSms(from, unknownReply);
+      await forwardToAdmin('out', 'Unknown', unknownReply, from);
       res.type('text/xml').send('<Response></Response>');
       return;
     }
@@ -214,6 +221,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
           followUp = `Great! Please reply with your order, like:\ntoast 10, 4-inch 5, hot dog 20`;
         }
         await sendSms(from, followUp);
+        await forwardToAdmin('out', customer.name, followUp, from);
         res.type('text/xml').send('<Response></Response>');
         return;
       }
@@ -229,20 +237,18 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
           logger.info('Repeating previous order', { from, quantities: lastOrder.quantities });
           // Fall through to the order-recording logic below
         } else {
-          await sendSms(
-            from,
-            `Hi ${customer.name}, we don't have a previous order on file for you. Please reply with your order like:\ntoast 10, 4-inch 5, hot dog 20`,
-          );
+          const noPrevMsg = `Hi ${customer.name}, we don't have a previous order on file for you. Please reply with your order like:\ntoast 10, 4-inch 5, hot dog 20`;
+          await sendSms(from, noPrevMsg);
+          await forwardToAdmin('out', customer.name, noPrevMsg, from);
           res.type('text/xml').send('<Response></Response>');
           return;
         }
       } else {
         // Could not parse anything useful
         logger.warn('Could not parse order from reply', { from, body });
-        await sendSms(
-          from,
-          `Hi ${customer.name}, we couldn't understand your order. Please reply with quantities like:\ntoast 10, 4-inch 5, hot dog 20`,
-        );
+        const noParseMsg = `Hi ${customer.name}, we couldn't understand your order. Please reply with quantities like:\ntoast 10, 4-inch 5, hot dog 20`;
+        await sendSms(from, noParseMsg);
+        await forwardToAdmin('out', customer.name, noParseMsg, from);
         res.type('text/xml').send('<Response></Response>');
         return;
       }
@@ -290,6 +296,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     }
 
     await sendSms(from, confirmationMsg);
+    await forwardToAdmin('out', customer.name, confirmationMsg, from);
 
     // Return empty TwiML (we already responded via API)
     res.type('text/xml').send('<Response></Response>');
