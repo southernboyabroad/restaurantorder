@@ -279,7 +279,6 @@ export async function updateDeliveryTabOrder(
   const updates: { col: number; value: number }[] = [];
 
   for (const [product, qty] of Object.entries(quantities)) {
-    if (qty <= 0) continue;
     const displayHeader = (PRODUCT_HEADERS[product] || product).toUpperCase();
     const colIndex = headers.indexOf(displayHeader);
     if (colIndex === -1) {
@@ -290,7 +289,7 @@ export async function updateDeliveryTabOrder(
   }
 
   if (updates.length === 0) {
-    logger.info(`No product quantities to write for "${customerName}" on "${tabName}"`);
+    logger.info(`No product columns matched for "${customerName}" on "${tabName}"`);
     return;
   }
 

@@ -271,6 +271,13 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
           emailed: false,
         });
 
+        // Update delivery tab with zeros and mark green
+        try {
+          await updateDeliveryTabOrder(customer.name, zeroQuantities);
+        } catch (tabErr) {
+          logger.error('Failed to update delivery tab for decline', { error: tabErr });
+        }
+
         const declineMsg = buildConfirmationMessage(customer.route);
         await sendSms(from, declineMsg);
         await forwardToAdmin('out', customer.name, declineMsg, from);
