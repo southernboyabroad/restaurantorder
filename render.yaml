@@ -27,9 +27,15 @@ services:
         sync: false
       - key: WAREHOUSE_EMAIL
         sync: false
+      - key: DELIVERY_SHEET_ID
+        sync: false
       - key: OPENAI_API_KEY
+        sync: false
+      - key: ADMIN_PHONE_NUMBER
         sync: false
       - key: PRODUCTS
         value: "chicken,ribs,pulled_pork,brisket,coleslaw,beans"
       - key: LOG_LEVEL
         value: info
+      - key: SCHEDULER_ENABLED
+        value: "true"
