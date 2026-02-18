@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import { config } from '../config';
 import { validateTwilioWebhook, buildOrderPromptMessage, buildConfirmationMessage } from './sms';
 import { findCustomerByPhone, findCustomerByNameHint, normalizePhone, appendOrder, markOrdersAsEmailed, getLastOrderForCustomer, getTodaysOrders, updateTodaysOrder, Customer } from './sheets';
-import { parseOrder, parseOrderStrict, isAffirmativeReply, isRepeatOrderRequest, parseCorrectionRequest, preprocessCorrectionText } from './orderParser';
+import { parseOrder, parseOrderStrict, isAffirmativeReply, isRepeatOrderRequest, isDeclineReply, parseCorrectionRequest, preprocessCorrectionText } from './orderParser';
 import { sendSms, forwardToAdmin } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
 import { formatOrderText, formatOrderHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
@@ -248,6 +248,32 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
         }
         await sendSms(from, followUp);
         await forwardToAdmin('out', customer.name, followUp, from);
+        res.type('text/xml').send('<Response></Response>');
+        return;
+      }
+
+      // Check if the customer is declining / skipping their order
+      if (isDeclineReply(body)) {
+        logger.info('Decline reply detected — recording zero order', { from, body, name: customer.name });
+
+        // Record a zero-quantity order so the 10:30 reminder is suppressed
+        const zeroQuantities: Record<string, number> = {};
+        for (const p of config.products) {
+          zeroQuantities[p] = 0;
+        }
+        await appendOrder({
+          date: dateStr,
+          phone: customer.phone,
+          name: customer.name,
+          route: customer.route || '',
+          quantities: zeroQuantities,
+          rawReply: body,
+          emailed: false,
+        });
+
+        const declineMsg = buildConfirmationMessage(customer.route);
+        await sendSms(from, declineMsg);
+        await forwardToAdmin('out', customer.name, declineMsg, from);
         res.type('text/xml').send('<Response></Response>');
         return;
       }

@@ -45,6 +45,7 @@ jest.mock('../services/orderParser', () => ({
   parseOrder: jest.fn(),
   parseOrderStrict: jest.fn().mockReturnValue(null),
   isAffirmativeReply: jest.fn().mockReturnValue(false),
+  isDeclineReply: jest.fn().mockReturnValue(false),
   isRepeatOrderRequest: jest.fn().mockReturnValue(false),
   parseCorrectionRequest: jest.fn().mockReturnValue(null),
   preprocessCorrectionText: jest.fn((text: string) => text.replace(/\s+to\s+(\d)/g, ' $1')),

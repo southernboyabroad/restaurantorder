@@ -6,7 +6,7 @@ jest.mock('../config', () => ({
   },
 }));
 
-import { parseOrderStrict, isAffirmativeReply, parseCorrectionRequest, preprocessCorrectionText } from '../services/orderParser';
+import { parseOrderStrict, isAffirmativeReply, isDeclineReply, parseCorrectionRequest, preprocessCorrectionText } from '../services/orderParser';
 
 describe('parseOrderStrict', () => {
   it('parses "product qty" format', () => {
@@ -382,6 +382,96 @@ describe('isAffirmativeReply', () => {
 
   it('does NOT match numbers', () => {
     expect(isAffirmativeReply('12')).toBe(false);
+  });
+});
+
+describe('isDeclineReply', () => {
+  it('detects "we\'re good"', () => {
+    expect(isDeclineReply("we're good")).toBe(true);
+  });
+
+  it('detects "We don\'t need anything this week"', () => {
+    expect(isDeclineReply("We don't need anything this week")).toBe(true);
+  });
+
+  it('detects "nothing today"', () => {
+    expect(isDeclineReply('nothing today')).toBe(true);
+  });
+
+  it('detects "skip this week"', () => {
+    expect(isDeclineReply('skip this week')).toBe(true);
+  });
+
+  it('detects "No thanks"', () => {
+    expect(isDeclineReply('No thanks')).toBe(true);
+  });
+
+  it('detects "No thank you"', () => {
+    expect(isDeclineReply('No thank you')).toBe(true);
+  });
+
+  it('detects "not this week"', () => {
+    expect(isDeclineReply('not this week')).toBe(true);
+  });
+
+  it('detects "we\'re all set"', () => {
+    expect(isDeclineReply("we're all set")).toBe(true);
+  });
+
+  it('detects "none for us"', () => {
+    expect(isDeclineReply('none for us')).toBe(true);
+  });
+
+  it('detects "pass this week"', () => {
+    expect(isDeclineReply('pass this week')).toBe(true);
+  });
+
+  it('detects "we will pass"', () => {
+    expect(isDeclineReply('we will pass')).toBe(true);
+  });
+
+  it('detects "not today"', () => {
+    expect(isDeclineReply('not today')).toBe(true);
+  });
+
+  it('detects "we\'re closed"', () => {
+    expect(isDeclineReply("we're closed")).toBe(true);
+  });
+
+  it('detects "closed this week"', () => {
+    expect(isDeclineReply('closed this week')).toBe(true);
+  });
+
+  it('detects "taking this week off"', () => {
+    expect(isDeclineReply('taking this week off')).toBe(true);
+  });
+
+  it('detects "off this week"', () => {
+    expect(isDeclineReply('off this week')).toBe(true);
+  });
+
+  it('detects bare "no"', () => {
+    expect(isDeclineReply('no')).toBe(true);
+  });
+
+  it('detects "No" (capitalized)', () => {
+    expect(isDeclineReply('No')).toBe(true);
+  });
+
+  it('does NOT match actual orders', () => {
+    expect(isDeclineReply('toast 10, 4-inch 5')).toBe(false);
+  });
+
+  it('does NOT match affirmative replies', () => {
+    expect(isDeclineReply('Yes')).toBe(false);
+  });
+
+  it('does NOT match long messages', () => {
+    expect(isDeclineReply('We don\'t need anything this week because we still have a ton of product left over from last week and the walk-in is packed full')).toBe(false);
+  });
+
+  it('does NOT match "same as last time"', () => {
+    expect(isDeclineReply('same as last time')).toBe(false);
   });
 });
 

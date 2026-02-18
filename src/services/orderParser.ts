@@ -265,6 +265,35 @@ export function isAffirmativeReply(text: string): boolean {
   return AFFIRMATIVE_PATTERNS.some((p) => p.test(trimmed));
 }
 
+// ── Decline / skip-order detection ──────────────────────────────
+// Detects replies like "we're good", "nothing today", "skip this week", etc.
+
+const DECLINE_PATTERNS = [
+  /\b(no|not|don'?t|dont)\s+(need|want|order|ordering)\b/i,
+  /\bnothing\s*(today|this\s*(week|time)|right\s*now|for\s*(us|me|today|now))?\b/i,
+  /\bwe'?re\s+(good|fine|ok|okay|all\s*(good|set))\b/i,
+  /\bi'?m\s+(good|fine|ok|okay|all\s*(good|set))\b/i,
+  /\ball\s*(good|set)\b/i,
+  /\bskip\s*(this)?\s*(week|time|today|order|us)?\b/i,
+  /\bnone\s*(today|this\s*(week|time)|for\s*(us|me|today|now))?\b/i,
+  /\bpass\s*(this)?\s*(week|time|today)?\b/i,
+  /\bnot\s*this\s*(week|time)\b/i,
+  /\bnot\s*today\b/i,
+  /\bno\s*thank(s| you)\b/i,
+  /^\s*no\s*$/i,
+  /\bwe\s*(will)?\s*pass\b/i,
+  /\bwe'?re\s+closed\b/i,
+  /\bclosed\s*(today|this\s*week)?\b/i,
+  /\btak(e|ing)\s*(the|this)?\s*(week|day)\s*off\b/i,
+  /\boff\s*this\s*(week|time)\b/i,
+];
+
+export function isDeclineReply(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length > 120) return false;
+  return DECLINE_PATTERNS.some((p) => p.test(trimmed));
+}
+
 // ── Order correction detection ──────────────────────────────────
 // Detects messages like:
 //   Admin:    "change Waldo's toast to 15"
