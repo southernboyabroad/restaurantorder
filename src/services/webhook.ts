@@ -191,6 +191,16 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       return;
     }
 
+    // ── Admin texting in? Stay silent. ─────────────────────────
+    // The admin's own messages should never trigger bot replies
+    // (unknown-number errors, order parsing, etc.).  Corrections
+    // are already handled above, so this is the right place.
+    if (isAdmin) {
+      logger.info('Admin SMS — no bot reply', { from, body });
+      res.type('text/xml').send('<Response></Response>');
+      return;
+    }
+
     if (!customer) {
       logger.warn('Received SMS from unknown number', { from });
       // Reply politely
