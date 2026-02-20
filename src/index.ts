@@ -18,7 +18,7 @@ app.get('/', (_req, res) => {
 });
 
 // ── Manual trigger — POST /api/remind ───────────────────────────
-app.post('/api/remind', async (_req, res) => {
+app.get('/api/remind', async (_req, res) => {
   try {
     await reminderJob();
     res.json({ ok: true, message: 'Reminder job executed' });
