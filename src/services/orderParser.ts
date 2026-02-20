@@ -265,6 +265,24 @@ export function isAffirmativeReply(text: string): boolean {
   return AFFIRMATIVE_PATTERNS.some((p) => p.test(trimmed));
 }
 
+// ── "Called in" detection ─────────────────────────────────────────
+// Detects replies like "Called in", "I called it in", "called the order in"
+// These mean the customer placed the order by phone and the admin needs
+// to manually enter quantities.
+
+const CALLED_IN_PATTERNS = [
+  /^\s*call(ed)?\s*(it\s+)?in\b/i,
+  /^\s*i\s+call(ed)?\s*(it\s+|the\s+order\s+)?in\b/i,
+  /^\s*already\s+call(ed)?\s*(it\s+)?in\b/i,
+  /^\s*phon(ed|e)\s*(it\s+)?in\b/i,
+];
+
+export function isCalledInReply(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length > 60) return false;
+  return CALLED_IN_PATTERNS.some((p) => p.test(trimmed));
+}
+
 // ── Decline / skip-order detection ──────────────────────────────
 // Detects replies like "we're good", "nothing today", "skip this week", etc.
 

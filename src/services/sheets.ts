@@ -7,6 +7,43 @@ import logger from '../logger';
 // Sheet "Orders"     → columns: Date | Phone | Name | Route | product1 | product2 | … | Raw Reply
 // ────────────────────────────────────────────────────────────────
 
+// ── Abbreviation → canonical product name mapping ───────────────
+// Customers often type abbreviations in columns C (defaultProduct)
+// and E (productOrder). This map resolves them to canonical names
+// that match config.products entries.
+const ABBREV_TO_PRODUCT: Record<string, string> = {
+  // Full canonical names
+  'toast': 'toast',
+  '4-inch': '4-inch',
+  'long': 'long',
+  'institutional_sandwich': 'institutional_sandwich',
+  'dinner_rolls': 'dinner_rolls',
+  // Common abbreviations (matching PRODUCT_ABBREVS in deliveryTab.ts)
+  't': 'toast',
+  '4in': '4-inch',
+  '4 in': '4-inch',
+  '4 inch': '4-inch',
+  'h': 'long',
+  's': 'institutional_sandwich',
+  'd': 'dinner_rolls',
+  // Friendly names
+  'sandwich': 'institutional_sandwich',
+  'sandwiches': 'institutional_sandwich',
+  'hot dog': 'long',
+  'hot dogs': 'long',
+  'hotdog': 'long',
+  'hotdogs': 'long',
+  'bun': '4-inch',
+  'buns': '4-inch',
+  'dinner': 'dinner_rolls',
+  'texas toast': 'toast',
+};
+
+function resolveProductName(raw: string): string {
+  const key = raw.trim().toLowerCase();
+  return ABBREV_TO_PRODUCT[key] || key;
+}
+
 export interface Customer {
   name: string;
   phone: string; // E.164 format, e.g. +15551234567
@@ -63,10 +100,12 @@ export async function getCustomers(): Promise<Customer[]> {
     .map((row) => ({
       name: row[0].trim(),
       phone: row[1].trim(),
-      defaultProduct: row[2]?.trim().toLowerCase() || undefined,
+      defaultProduct: row[2]
+        ? resolveProductName(row[2])
+        : undefined,
       route: row[3]?.trim() || undefined,
       productOrder: row[4]
-        ? row[4].split(',').map((s: string) => s.trim().toLowerCase()).filter(Boolean)
+        ? row[4].split(',').map((s: string) => resolveProductName(s)).filter(Boolean)
         : undefined,
     }));
 

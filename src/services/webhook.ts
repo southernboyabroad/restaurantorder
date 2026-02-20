@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import { config } from '../config';
 import { validateTwilioWebhook, buildOrderPromptMessage, buildConfirmationMessage } from './sms';
 import { findCustomerByPhone, findCustomerByNameHint, normalizePhone, appendOrder, markOrdersAsEmailed, getLastOrderForCustomer, getTodaysOrders, updateTodaysOrder, Customer } from './sheets';
-import { parseOrder, parseOrderStrict, isAffirmativeReply, isRepeatOrderRequest, isDeclineReply, parseCorrectionRequest, preprocessCorrectionText } from './orderParser';
+import { parseOrder, parseOrderStrict, isAffirmativeReply, isRepeatOrderRequest, isDeclineReply, isCalledInReply, parseCorrectionRequest, preprocessCorrectionText } from './orderParser';
 import { sendSms, forwardToAdmin } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
 import { formatOrderText, formatOrderHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
@@ -281,6 +281,16 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
         const declineMsg = buildConfirmationMessage(customer.route);
         await sendSms(from, declineMsg);
         await forwardToAdmin('out', customer.name, declineMsg, from);
+        res.type('text/xml').send('<Response></Response>');
+        return;
+      }
+
+      // Check if the customer called the order in by phone
+      if (isCalledInReply(body)) {
+        logger.info('Called-in reply detected — notifying admin', { from, body, name: customer.name });
+        const calledInMsg = `Got it — ${customer.name} called their order in. We'll get it entered.`;
+        await sendSms(from, calledInMsg);
+        await forwardToAdmin('in', customer.name, `⚠️ ${customer.name} says they called their order in. Please enter it manually.`, from);
         res.type('text/xml').send('<Response></Response>');
         return;
       }
