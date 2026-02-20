@@ -1,7 +1,7 @@
 import express from 'express';
 import { config } from './config';
 import { webhookRouter } from './services/webhook';
-import { startScheduler } from './services/scheduler';
+import { startScheduler, reminderJob } from './services/scheduler';
 import logger from './logger';
 
 const app = express();
@@ -15,6 +15,16 @@ app.set('trust proxy', 1);
 // ── Homepage ────────────────────────────────────────────────────
 app.get('/', (_req, res) => {
   res.send('Restaurant Order Service is running.');
+});
+
+// ── Manual trigger — POST /api/remind ───────────────────────────
+app.post('/api/remind', async (_req, res) => {
+  try {
+    await reminderJob();
+    res.json({ ok: true, message: 'Reminder job executed' });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err) });
+  }
 });
 
 // ── Webhook routes ──────────────────────────────────────────────
