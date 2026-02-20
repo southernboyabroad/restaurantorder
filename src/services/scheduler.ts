@@ -182,6 +182,11 @@ export function startScheduler(): void {
     reminderJob();
   });
 
+  // "At 11:15 on Wednesday, Friday, and Saturday" — second reminder
+  cron.schedule('15 11 * * 3,5,6', () => {
+    reminderJob();
+  });
+
   // "At 11:30 on Wednesday, Friday, and Saturday"
   cron.schedule('30 11 * * 3,5,6', () => {
     afternoonJob();
@@ -191,7 +196,7 @@ export function startScheduler(): void {
     if (config.testPhoneNumber) {
       logger.info(`Scheduler ENABLED (TEST MODE) — SMS will only go to ${config.testPhoneNumber}`);
     } else {
-      logger.info('Scheduler ENABLED — SMS at 9:30 AM, reminder at 10:30 AM, email at 11:30 AM (Wed/Fri/Sat ET)');
+      logger.info('Scheduler ENABLED — SMS at 9:30 AM, reminders at 10:30 & 11:15 AM, email at 11:30 AM (Wed/Fri/Sat ET)');
     }
   } else {
     logger.info('Scheduler DISABLED — cron jobs registered but will not run. Set SCHEDULER_ENABLED=true to activate.');
