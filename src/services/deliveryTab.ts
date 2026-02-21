@@ -12,6 +12,17 @@ const PRODUCT_HEADERS: Record<string, string> = {
   dinner_rolls: 'DINNER',
 };
 
+// Column order for the delivery tab (matches the old spreadsheet layout).
+// This is independent of config.products so the delivery tab can have its
+// own preferred column order: SANDWICH first, then 4in, TOAST, HOT DOGS, DINNER.
+const DELIVERY_PRODUCT_ORDER = [
+  'institutional_sandwich',
+  '4-inch',
+  'toast',
+  'long',
+  'dinner_rolls',
+];
+
 // Short abbreviations shown in column B (customer default product)
 const PRODUCT_ABBREVS: Record<string, string> = {
   toast: 'T',
@@ -81,6 +92,20 @@ function getDefaultAbbrev(defaultProduct?: string): string {
     .join(',');
 }
 
+// Deduplicate customers so each unique name appears only once.
+// When a restaurant has multiple phone contacts, keep the first entry's
+// route and defaultProduct (they should be the same across contacts).
+function deduplicateCustomers(customers: Customer[]): Customer[] {
+  const seen = new Map<string, Customer>();
+  for (const c of customers) {
+    const key = c.name.toUpperCase().trim();
+    if (!seen.has(key)) {
+      seen.set(key, c);
+    }
+  }
+  return Array.from(seen.values());
+}
+
 function groupByRoute(customers: Customer[]): Map<string, Customer[]> {
   const map = new Map<string, Customer[]>();
   for (const c of customers) {
@@ -118,10 +143,11 @@ export async function ensureDeliveryTab(deliveryDate?: Date): Promise<void> {
   const newSheetId =
     addResult.data.replies?.[0]?.addSheet?.properties?.sheetId;
 
-  // Fetch customers grouped by route
-  const customers = await getCustomers();
-  const routeGroups = groupByRoute(customers);
-  const products = config.products;
+  // Fetch customers, deduplicate (one row per unique name), group by route
+  const allCustomers = await getCustomers();
+  const uniqueCustomers = deduplicateCustomers(allCustomers);
+  const routeGroups = groupByRoute(uniqueCustomers);
+  const products = DELIVERY_PRODUCT_ORDER.filter((p) => config.products.includes(p));
 
   // Build tab data row by row
   const headerRow = ['', '', ...products.map((p) => PRODUCT_HEADERS[p] || p.toUpperCase())];
@@ -177,7 +203,7 @@ export async function ensureDeliveryTab(deliveryDate?: Date): Promise<void> {
     await formatDeliveryTab(sheets, newSheetId, rows);
   }
 
-  logger.info(`Delivery tab "${tabName}" created with ${customers.length} customers`);
+  logger.info(`Delivery tab "${tabName}" created with ${uniqueCustomers.length} customers`);
 }
 
 // ── Apply bold formatting to header / route / TOTAL rows ─────────
@@ -200,10 +226,10 @@ async function formatDeliveryTab(
     },
   });
 
-  // Bold route headers and TOTAL rows
+  // Bold route headers; bold + orange background for TOTAL rows
   for (let i = 1; i < rows.length; i++) {
     const cellA = String(rows[i]?.[0] || '');
-    if (cellA.startsWith('Route ') || cellA === 'TOTAL') {
+    if (cellA.startsWith('Route ')) {
       requests.push({
         repeatCell: {
           range: { sheetId, startRowIndex: i, endRowIndex: i + 1 },
@@ -211,6 +237,19 @@ async function formatDeliveryTab(
             userEnteredFormat: { textFormat: { bold: true } },
           },
           fields: 'userEnteredFormat.textFormat.bold',
+        },
+      });
+    } else if (cellA === 'TOTAL') {
+      requests.push({
+        repeatCell: {
+          range: { sheetId, startRowIndex: i, endRowIndex: i + 1 },
+          cell: {
+            userEnteredFormat: {
+              textFormat: { bold: true },
+              backgroundColor: { red: 1.0, green: 0.835, blue: 0.4 },
+            },
+          },
+          fields: 'userEnteredFormat.textFormat.bold,userEnteredFormat.backgroundColor',
         },
       });
     }
