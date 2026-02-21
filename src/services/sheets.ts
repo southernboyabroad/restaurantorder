@@ -29,6 +29,8 @@ const ABBREV_TO_PRODUCT: Record<string, string> = {
   // Friendly names
   'sandwich': 'institutional_sandwich',
   'sandwiches': 'institutional_sandwich',
+  'sand roll': 'institutional_sandwich',
+  'sand rolls': 'institutional_sandwich',
   'hot dog': 'long',
   'hot dogs': 'long',
   'hotdog': 'long',

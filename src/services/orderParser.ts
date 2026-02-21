@@ -35,6 +35,8 @@ const PRODUCT_ALIASES: Record<string, string> = {
   'institutional sandwich': 'institutional_sandwich',
   'sandwich': 'institutional_sandwich',
   'sandwiches': 'institutional_sandwich',
+  'sand roll': 'institutional_sandwich',
+  'sand rolls': 'institutional_sandwich',
   'three-inch bun': 'institutional_sandwich',
   'dinner_rolls': 'dinner_rolls',
   'dinner rolls': 'dinner_rolls',
@@ -387,7 +389,7 @@ Important synonyms — always map these to the canonical product name:
 - "texas toast", "texas" → toast
 - "four-inch hamburger bun", "four-inch bun", "bun", "four-inch" → 4-inch
 - "hot dog" → long
-- "sandwich", "three-inch bun" → institutional_sandwich
+- "sandwich", "sand rolls", "three-inch bun" → institutional_sandwich
 - "dinner", "dinner rolls" → dinner_rolls
 Return ONLY valid JSON in this exact format: {"quantities": {"product_name": number}, "confident": true/false}
 Set confident to false if the message is ambiguous or doesn't clearly reference any products.
