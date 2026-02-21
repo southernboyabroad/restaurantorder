@@ -312,6 +312,20 @@ export function normalizePhone(raw: string): string {
   return raw.startsWith('+') ? raw : `+${raw}`;
 }
 
+// ── Find other contacts for the same restaurant ─────────────────
+// Returns all Customer records with the same name but a different phone number.
+// Used to notify other contacts when one person places an order.
+
+export async function getOtherContactsForCustomer(name: string, excludePhone: string): Promise<Customer[]> {
+  const customers = await getCustomers();
+  const normalizedExclude = normalizePhone(excludePhone);
+  return customers.filter(
+    (c) =>
+      c.name.toLowerCase().trim() === name.toLowerCase().trim() &&
+      normalizePhone(c.phone) !== normalizedExclude,
+  );
+}
+
 // ── Look up a customer by phone ─────────────────────────────────
 
 export async function findCustomerByPhone(phone: string): Promise<Customer | undefined> {

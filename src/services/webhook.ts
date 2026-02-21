@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import { config } from '../config';
 import { validateTwilioWebhook, buildOrderPromptMessage, buildConfirmationMessage } from './sms';
-import { findCustomerByPhone, findCustomerByNameHint, normalizePhone, appendOrder, markOrdersAsEmailed, getLastOrderForCustomer, getTodaysOrders, updateTodaysOrder, Customer } from './sheets';
+import { findCustomerByPhone, findCustomerByNameHint, normalizePhone, appendOrder, markOrdersAsEmailed, getLastOrderForCustomer, getTodaysOrders, updateTodaysOrder, getOtherContactsForCustomer, Customer } from './sheets';
 import { parseOrder, parseOrderStrict, isAffirmativeReply, isRepeatOrderRequest, isDeclineReply, isCalledInReply, parseCorrectionRequest, preprocessCorrectionText } from './orderParser';
 import { sendSms, forwardToAdmin } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
@@ -211,18 +211,50 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       return;
     }
 
-    // ── Already ordered today? Stay silent. ────────────────────────
+    // ── Already ordered today? ─────────────────────────────────────
     // Once a customer has placed an order and received their confirmation,
     // any follow-up ("Thanks!", "Have a great day", etc.) should NOT
     // trigger another bot reply.  Corrections are already handled above.
     const dateStr = new Date().toISOString().slice(0, 10);
     const todaysOrders = await getTodaysOrders(dateStr);
-    const alreadyOrdered = todaysOrders.some(
-      (o) => o.name.toLowerCase() === customer.name.toLowerCase(),
+    const normalizedFrom = normalizePhone(from);
+
+    // Check if THIS specific phone already placed an order today
+    const senderAlreadyOrdered = todaysOrders.some(
+      (o) => normalizePhone(o.phone) === normalizedFrom,
     );
 
-    if (alreadyOrdered) {
+    if (senderAlreadyOrdered) {
       logger.info('Customer already ordered today — staying silent', { from, name: customer.name, body });
+      res.type('text/xml').send('<Response></Response>');
+      return;
+    }
+
+    // Check if a DIFFERENT contact from the same restaurant already ordered with real items
+    const otherContactOrder = todaysOrders.find(
+      (o) =>
+        o.name.toLowerCase() === customer.name.toLowerCase() &&
+        normalizePhone(o.phone) !== normalizedFrom &&
+        Object.values(o.quantities).some((q) => q > 0),
+    );
+
+    if (otherContactOrder) {
+      // Let them know the order was already handled
+      const existingItems = Object.entries(otherContactOrder.quantities)
+        .filter(([, qty]) => qty > 0)
+        .map(([product, qty]) => {
+          const display = product
+            .replace(/_/g, ' ')
+            .replace(/\blong\b/gi, 'hot dog')
+            .replace(/\binstitutional sandwich\b/gi, 'sandwich');
+          return `${display} - ${qty}`;
+        })
+        .join('\n');
+
+      const alreadyMsg = `Heads up — an order has already been placed for ${customer.name} today:\n\n${existingItems}\n\nIf you need to make changes, reply with something like "change toast to 15".`;
+      await sendSms(from, alreadyMsg);
+      await forwardToAdmin('out', customer.name, alreadyMsg, from);
+      logger.info('Another contact already ordered — notified sender', { from, name: customer.name, orderedBy: otherContactOrder.phone });
       res.type('text/xml').send('<Response></Response>');
       return;
     }
@@ -370,6 +402,23 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
 
     await sendSms(from, confirmationMsg);
     await forwardToAdmin('out', customer.name, confirmationMsg, from);
+
+    // Notify other contacts for the same restaurant so they know the order is handled
+    try {
+      const otherContacts = await getOtherContactsForCustomer(customer.name, from);
+      if (otherContacts.length > 0) {
+        const notifyMsg = `Heads up — an order has been placed for ${customer.name} today:\n\n${itemLines}\n\nNo need to reply unless you'd like to make changes.`;
+        for (const contact of otherContacts) {
+          await sendSms(contact.phone, notifyMsg);
+          logger.info('Notified other contact about order', {
+            customer: customer.name,
+            notifiedPhone: contact.phone,
+          });
+        }
+      }
+    } catch (notifyErr) {
+      logger.error('Failed to notify other contacts', { error: notifyErr });
+    }
 
     // Return empty TwiML (we already responded via API)
     res.type('text/xml').send('<Response></Response>');

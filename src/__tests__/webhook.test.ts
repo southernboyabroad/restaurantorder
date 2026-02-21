@@ -39,6 +39,7 @@ jest.mock('../services/sheets', () => ({
   markOrdersAsEmailed: jest.fn().mockResolvedValue(undefined),
   getLastOrderForCustomer: jest.fn().mockResolvedValue(null),
   updateTodaysOrder: jest.fn().mockResolvedValue({ found: false, wasEmailed: false, mergedQuantities: {}, previousQuantities: {} }),
+  getOtherContactsForCustomer: jest.fn().mockResolvedValue([]),
 }));
 
 jest.mock('../services/orderParser', () => ({
@@ -46,6 +47,7 @@ jest.mock('../services/orderParser', () => ({
   parseOrderStrict: jest.fn().mockReturnValue(null),
   isAffirmativeReply: jest.fn().mockReturnValue(false),
   isDeclineReply: jest.fn().mockReturnValue(false),
+  isCalledInReply: jest.fn().mockReturnValue(false),
   isRepeatOrderRequest: jest.fn().mockReturnValue(false),
   parseCorrectionRequest: jest.fn().mockReturnValue(null),
   preprocessCorrectionText: jest.fn((text: string) => text.replace(/\s+to\s+(\d)/g, ' $1')),
