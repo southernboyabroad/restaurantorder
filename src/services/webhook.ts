@@ -251,7 +251,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
         })
         .join('\n');
 
-      const alreadyMsg = `Heads up — an order has already been placed for ${customer.name} today:\n\n${existingItems}\n\nIf you need to make changes, reply with something like "change toast to 15".`;
+      const alreadyMsg = `Heads up — an order has already been placed for you guys today:\n\n${existingItems}\n\nIf you need to make changes, reply with something like "change toast to 15".`;
       await sendSms(from, alreadyMsg);
       await forwardToAdmin('out', customer.name, alreadyMsg, from);
       logger.info('Another contact already ordered — notified sender', { from, name: customer.name, orderedBy: otherContactOrder.phone });
@@ -407,7 +407,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     try {
       const otherContacts = await getOtherContactsForCustomer(customer.name, from);
       if (otherContacts.length > 0) {
-        const notifyMsg = `Heads up — an order has been placed for ${customer.name} today:\n\n${itemLines}\n\nNo need to reply unless you'd like to make changes.`;
+        const notifyMsg = `Heads up — an order has been placed for you guys today:\n\n${itemLines}\n\nNo need to reply unless you'd like to make changes.`;
         for (const contact of otherContacts) {
           await sendSms(contact.phone, notifyMsg);
           logger.info('Notified other contact about order', {
