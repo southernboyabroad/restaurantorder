@@ -48,7 +48,10 @@ async function morningJob(): Promise<void> {
       }
     } else {
       // Build messages per customer; skip customers whose route has no text today
+      // Also honour per-customer smsDays overrides (Column F in the Customers sheet).
+      const dow = new Date().getDay();
       const toSend = customers
+        .filter((c) => !c.smsDays || c.smsDays.includes(dow))
         .map((c) => ({ customer: c, message: buildOrderPromptMessage(c.route) }))
         .filter((entry): entry is { customer: typeof entry.customer; message: string } => entry.message !== null);
 
@@ -91,10 +94,13 @@ async function reminderJob(): Promise<void> {
 
     // Find customers who haven't ordered — dedupe by name so each
     // restaurant only gets one reminder per phone number.
-    // Also skip customers whose route has no text today.
+    // Also skip customers whose route has no text today or whose
+    // smsDays override excludes today.
+    const dow = new Date().getDay();
     const needsReminder = customers.filter(
       (c) =>
         !orderedNames.has(c.name.toLowerCase()) &&
+        (!c.smsDays || c.smsDays.includes(dow)) &&
         buildOrderPromptMessage(c.route) !== null,
     );
 

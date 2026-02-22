@@ -3,7 +3,7 @@ import { config } from '../config';
 import logger from '../logger';
 
 // ── Sheet layout ────────────────────────────────────────────────
-// Sheet "Customers"  → columns: Name | Phone | Default Product (optional) | Route (optional) | Product Order (optional)
+// Sheet "Customers"  → columns: Name | Phone | Default Product (optional) | Route (optional) | Product Order (optional) | SMS Days (optional)
 // Sheet "Orders"     → columns: Date | Phone | Name | Route | product1 | product2 | … | Raw Reply
 // ────────────────────────────────────────────────────────────────
 
@@ -52,6 +52,7 @@ export interface Customer {
   defaultProduct?: string; // canonical product name, e.g. "4-inch"
   route?: string; // delivery route number, e.g. "25252"
   productOrder?: string[]; // positional product mapping, e.g. ["toast", "4-inch"]
+  smsDays?: number[]; // days-of-week to send SMS (JS convention: 0=Sun … 6=Sat). If omitted, uses the route's default schedule.
 }
 
 export interface OrderRow {
@@ -93,7 +94,7 @@ export async function getCustomers(): Promise<Customer[]> {
   const sheets = getClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: config.google.sheetId,
-    range: 'Customers!A2:E', // skip header; col C = default product, col D = route, col E = product order
+    range: 'Customers!A2:F', // skip header; col C = default product, col D = route, col E = product order, col F = SMS days
   });
 
   const rows = res.data.values || [];
@@ -108,6 +109,9 @@ export async function getCustomers(): Promise<Customer[]> {
       route: row[3]?.trim() || undefined,
       productOrder: row[4]
         ? row[4].split(',').map((s: string) => resolveProductName(s)).filter(Boolean)
+        : undefined,
+      smsDays: row[5]
+        ? row[5].split(',').map((s: string) => parseInt(s.trim(), 10)).filter((n: number) => !isNaN(n))
         : undefined,
     }));
 
