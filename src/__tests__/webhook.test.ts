@@ -64,6 +64,8 @@ jest.mock('../services/deliveryTab', () => ({
 // Default: ordering window is open (so existing tests still work)
 jest.mock('../services/orderingWindow', () => ({
   isInsideOrderingWindow: jest.fn().mockReturnValue(true),
+  isEarlyOrderWindow: jest.fn().mockReturnValue(false),
+  getNextOrderingDate: jest.fn().mockReturnValue({ dateStr: '2026-02-18', dayOfWeek: 3 }),
 }));
 
 jest.mock('../services/orderSummary', () => ({

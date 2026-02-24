@@ -47,17 +47,31 @@ async function morningJob(): Promise<void> {
         logger.info('Morning SMS test: no message for today (route/day combo)');
       }
     } else {
-      // Build messages per customer; skip customers whose route has no text today
+      // Build messages per customer; skip customers whose route has no text today.
       // Also honour per-customer smsDays overrides (Column F in the Customers sheet).
+      // Skip customers who already have an order for today (early orders).
       const dow = new Date().getDay();
+      const dateStr = todayDateStr();
+      const existingOrders = await getTodaysOrders(dateStr);
+      const alreadyOrderedNames = new Set(existingOrders.map((o) => o.name.toLowerCase()));
+
       const toSend = customers
         .filter((c) => !c.smsDays || c.smsDays.includes(dow))
+        .filter((c) => !alreadyOrderedNames.has(c.name.toLowerCase()))
         .map((c) => ({ customer: c, message: buildOrderPromptMessage(c.route) }))
         .filter((entry): entry is { customer: typeof entry.customer; message: string } => entry.message !== null);
 
-      const skipped = customers.length - toSend.length;
-      if (skipped > 0) {
-        logger.info(`Skipping ${skipped} customer(s) — no text scheduled for their route today`);
+      const skippedRoute = customers.length - customers.filter((c) => !c.smsDays || c.smsDays.includes(dow)).length;
+      const skippedEarly = customers
+        .filter((c) => !c.smsDays || c.smsDays.includes(dow))
+        .filter((c) => alreadyOrderedNames.has(c.name.toLowerCase())).length;
+      const skippedTotal = customers.length - toSend.length;
+
+      if (skippedEarly > 0) {
+        logger.info(`Skipping ${skippedEarly} customer(s) — already have an early order for today`);
+      }
+      if (skippedTotal > skippedEarly) {
+        logger.info(`Skipping ${skippedTotal - skippedEarly} customer(s) — no text scheduled for their route today`);
       }
 
       const results = await Promise.allSettled(

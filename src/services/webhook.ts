@@ -7,7 +7,7 @@ import { sendSms, forwardToAdmin } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
 import { formatOrderText, formatOrderHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
 import { sendWarehouseEmail } from './email';
-import { isInsideOrderingWindow } from './orderingWindow';
+import { isInsideOrderingWindow, isEarlyOrderWindow, getNextOrderingDate } from './orderingWindow';
 import logger from '../logger';
 
 // ── Order correction handler ────────────────────────────────────
@@ -20,8 +20,9 @@ async function handleCorrection(
   isAdmin: boolean,
   correction: ReturnType<typeof parseCorrectionRequest> & {},
   res: import('express').Response,
+  orderDateStr?: string,
 ): Promise<void> {
-  const dateStr = new Date().toISOString().slice(0, 10);
+  const dateStr = orderDateStr || new Date().toISOString().slice(0, 10);
 
   let targetCustomer: Customer;
 
@@ -84,7 +85,8 @@ async function handleCorrection(
 
   // Update the delivery tab with the merged quantities
   try {
-    await updateDeliveryTabOrder(targetCustomer.name, result.mergedQuantities);
+    const corrDelivery = getDeliveryDate(new Date(`${dateStr}T12:00:00`));
+    await updateDeliveryTabOrder(targetCustomer.name, result.mergedQuantities, corrDelivery);
   } catch (tabErr) {
     logger.error('Failed to update delivery tab for correction', { error: tabErr });
   }
@@ -92,7 +94,7 @@ async function handleCorrection(
   // If the original was already emailed, send a correction email now
   if (result.wasEmailed) {
     try {
-      const delivery = getDeliveryDate();
+      const delivery = getDeliveryDate(new Date(`${dateStr}T12:00:00`));
       const deliveryDateStr = formatDeliveryDate(delivery);
       const dayName = deliveryDayName(delivery);
       const routeLabel = targetCustomer.route || 'Unassigned';
@@ -144,8 +146,14 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
 
   logger.info('Inbound SMS received', { from, body });
 
-  // ── Outside the ordering window → stay silent, let texts pass through ──
-  if (!isInsideOrderingWindow()) {
+  // ── Check ordering window ──────────────────────────────────────
+  // Inside the normal window (Wed/Fri/Sat 9:30 AM - 1 PM) → process normally
+  // Early order window (after 6 PM on ordering days, or non-ordering days) → accept for next delivery
+  // Dead zone (1 PM - 6 PM on ordering days) → stay silent
+  const insideWindow = isInsideOrderingWindow();
+  const earlyOrder = !insideWindow && isEarlyOrderWindow();
+
+  if (!insideWindow && !earlyOrder) {
     logger.info('Outside ordering window — ignoring inbound SMS (no bot reply)', { from });
     res.type('text/xml').send('<Response></Response>');
     return;
@@ -184,10 +192,27 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     const customerLabel = customer?.name || 'Unknown';
     await forwardToAdmin('in', customerLabel, body, from);
 
+    // ── Determine the order date ──────────────────────────────────
+    // During the normal window → today's date
+    // Early order → the customer's next scheduled ordering day
+    const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    let orderDateStr: string;
+    let orderDayOfWeek: number;
+
+    if (earlyOrder && customer) {
+      const next = getNextOrderingDate(customer);
+      orderDateStr = next.dateStr;
+      orderDayOfWeek = next.dayOfWeek;
+      logger.info('Early order detected', { from, name: customer.name, orderDate: orderDateStr, orderDay: DAY_NAMES[orderDayOfWeek] });
+    } else {
+      orderDateStr = new Date().toISOString().slice(0, 10);
+      orderDayOfWeek = new Date().getDay();
+    }
+
     // ── Check for order correction ──────────────────────────────
     const correction = parseCorrectionRequest(body);
     if (correction) {
-      await handleCorrection(from, customer, isAdmin, correction, res);
+      await handleCorrection(from, customer, isAdmin, correction, res, orderDateStr);
       return;
     }
 
@@ -211,11 +236,11 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       return;
     }
 
-    // ── Already ordered today? ─────────────────────────────────────
+    // ── Already ordered for target date? ────────────────────────────
     // Once a customer has placed an order and received their confirmation,
     // any follow-up ("Thanks!", "Have a great day", etc.) should NOT
     // trigger another bot reply.  Corrections are already handled above.
-    const dateStr = new Date().toISOString().slice(0, 10);
+    const dateStr = orderDateStr;
     const todaysOrders = await getTodaysOrders(dateStr);
     const normalizedFrom = normalizePhone(from);
 
@@ -294,7 +319,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
           zeroQuantities[p] = 0;
         }
         await appendOrder({
-          date: dateStr,
+          date: orderDateStr,
           phone: customer.phone,
           name: customer.name,
           route: customer.route || '',
@@ -305,12 +330,15 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
 
         // Update delivery tab with zeros and mark green
         try {
-          await updateDeliveryTabOrder(customer.name, zeroQuantities);
+          const declineDelivery = getDeliveryDate(new Date(`${orderDateStr}T12:00:00`));
+          await updateDeliveryTabOrder(customer.name, zeroQuantities, declineDelivery);
         } catch (tabErr) {
           logger.error('Failed to update delivery tab for decline', { error: tabErr });
         }
 
-        const declineMsg = buildConfirmationMessage(customer.route);
+        const declineMsg = earlyOrder
+          ? `Got it — no order for ${DAY_NAMES[orderDayOfWeek]}. You won't get a text that day.`
+          : buildConfirmationMessage(customer.route, orderDayOfWeek);
         await sendSms(from, declineMsg);
         await forwardToAdmin('out', customer.name, declineMsg, from);
         res.type('text/xml').send('<Response></Response>');
@@ -357,7 +385,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
 
     // Record the order
     await appendOrder({
-      date: dateStr,
+      date: orderDateStr,
       phone: customer.phone,
       name: customer.name,
       route: customer.route || '',
@@ -368,7 +396,8 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
 
     // Also update the delivery date tab (second mechanism)
     try {
-      await updateDeliveryTabOrder(customer.name, parsed.quantities);
+      const orderDelivery = getDeliveryDate(new Date(`${orderDateStr}T12:00:00`));
+      await updateDeliveryTabOrder(customer.name, parsed.quantities, orderDelivery);
     } catch (tabErr) {
       logger.error('Failed to update delivery tab', { error: tabErr });
       // Non-fatal — the flat Orders sheet already has the order
@@ -390,7 +419,14 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       })
       .join('\n');
 
-    let confirmationMsg = buildConfirmationMessage(customer.route) + '\n\n' + itemLines;
+    let confirmationMsg: string;
+    if (earlyOrder) {
+      const deliveryDate = getDeliveryDate(new Date(`${orderDateStr}T12:00:00`));
+      const deliveryDay = DAY_NAMES[deliveryDate.getDay()];
+      confirmationMsg = `Got it! Your order for ${deliveryDay} is locked in. You won't get a text on ${DAY_NAMES[orderDayOfWeek]}.\n\n${itemLines}`;
+    } else {
+      confirmationMsg = buildConfirmationMessage(customer.route, orderDayOfWeek) + '\n\n' + itemLines;
+    }
     if (!parsed.confident) {
       confirmationMsg += '\n\n⚠️ We interpreted your message with AI — please double-check and reply again if anything is wrong.';
     }
