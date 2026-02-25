@@ -18,10 +18,24 @@ const PRODUCT_ALIASES: Record<string, string> = {
   '4-in': '4-inch',
   '4 in': '4-inch',
   '4 inch': '4-inch',
+  '4in': '4-inch',
+  '4-inch buns': '4-inch',
+  '4-inch bun': '4-inch',
+  '4 inch buns': '4-inch',
+  '4 inch bun': '4-inch',
+  '4-in buns': '4-inch',
+  '4-in bun': '4-inch',
+  '4 in buns': '4-inch',
+  '4 in bun': '4-inch',
+  '4in buns': '4-inch',
+  '4in bun': '4-inch',
   'four-inch': '4-inch',
   'four-inch hamburger bun': '4-inch',
+  'four-inch buns': '4-inch',
   'four-inch bun': '4-inch',
   'four inch': '4-inch',
+  'four inch buns': '4-inch',
+  'four inch bun': '4-inch',
   'bun': '4-inch',
   'buns': '4-inch',
   'long': 'long',
@@ -325,14 +339,27 @@ export interface CorrectionRequest {
 }
 
 // Allow optional preamble before the keyword, e.g. "Oh crap, change ..." or "Hey, update ..."
-const CORRECTION_PREFIX = /^(.*?\b)?(change|update|fix|correct)\s+(that\s+)?/i;
+const CORRECTION_PREFIX = /^(.*?\b)?(change|update|fix|correct|add)\s+(that\s+)?/i;
 
 export function parseCorrectionRequest(text: string): CorrectionRequest | null {
   const trimmed = text.trim();
-  if (!CORRECTION_PREFIX.test(trimmed)) return null;
+  const prefixMatch = trimmed.match(CORRECTION_PREFIX);
+  if (!prefixMatch) return null;
 
+  const keyword = prefixMatch[2].toLowerCase();
   const afterKeyword = trimmed.replace(CORRECTION_PREFIX, '').trim();
   if (!afterKeyword) return null;
+
+  // "add" uses format: "add <qty> <product> to <customer name>"
+  // e.g. "Add four 4 in to dad's bbq"
+  if (keyword === 'add') {
+    const addToMatch = afterKeyword.match(/^(.+?)\s+to\s+(.+)$/i);
+    if (addToMatch) {
+      return { customerNameHint: addToMatch[2].trim(), orderText: addToMatch[1].trim() };
+    }
+    // No "to <customer>" → self-correction: "add 4 toast"
+    return { orderText: afterKeyword };
+  }
 
   // Self-correction: "my order to ..." or "my toast to 15"
   const myMatch = afterKeyword.match(/^my\s+(order\s+to\s+)?(.+)$/i);
