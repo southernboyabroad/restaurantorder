@@ -180,7 +180,7 @@ export async function ensureDeliveryTab(deliveryDate?: Date): Promise<void> {
     const totalRow: string[] = ['TOTAL', ''];
     for (let i = 0; i < products.length; i++) {
       const col = colLetter(2 + i); // products start at column C (index 2)
-      totalRow.push(`=SUM(${col}${firstCustomerRow}:${col}${lastCustomerRow})`);
+      totalRow.push(`=IF(SUM(${col}${firstCustomerRow}:${col}${lastCustomerRow})=0,"",SUM(${col}${firstCustomerRow}:${col}${lastCustomerRow}))`);
     }
     rows.push(totalRow);
     currentRow++;
@@ -332,11 +332,11 @@ export async function updateDeliveryTabOrder(
     return;
   }
 
-  // Write quantity values
+  // Write quantity values — zeros become empty strings so the cell stays blank
   const rowNum = customerRow + 1; // 0-indexed → 1-indexed for A1 notation
   const valueUpdates = updates.map((u) => ({
     range: `'${tabName}'!${colLetter(u.col)}${rowNum}`,
-    values: [[u.value]],
+    values: [[u.value === 0 ? '' : u.value]],
   }));
 
   await sheets.spreadsheets.values.batchUpdate({
@@ -347,7 +347,8 @@ export async function updateDeliveryTabOrder(
     },
   });
 
-  // Set green background on the updated cells
+  // Set green background only on cells with non-zero values;
+  // zero/blank cells stay white (reset background)
   const formatRequests: sheets_v4.Schema$Request[] = updates.map((u) => ({
     repeatCell: {
       range: {
@@ -359,7 +360,9 @@ export async function updateDeliveryTabOrder(
       },
       cell: {
         userEnteredFormat: {
-          backgroundColor: { red: 0.714, green: 0.843, blue: 0.659 },
+          backgroundColor: u.value === 0
+            ? { red: 1, green: 1, blue: 1 }
+            : { red: 0.714, green: 0.843, blue: 0.659 },
         },
       },
       fields: 'userEnteredFormat.backgroundColor',

@@ -4,7 +4,7 @@ import { sendSms, buildOrderPromptMessage, forwardToAdmin } from './sms';
 import { formatSummaryText, formatSummaryHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName, groupOrdersByRoute } from './orderSummary';
 import { sendWarehouseEmail } from './email';
 import { ensureOrdersSheet } from './sheets';
-import { ensureDeliveryTab } from './deliveryTab';
+import { ensureDeliveryTab, updateDeliveryTabOrder } from './deliveryTab';
 import { config } from '../config';
 import logger from '../logger';
 
@@ -159,6 +159,16 @@ async function afternoonJob(): Promise<void> {
     const deliveryDateStr = formatDeliveryDate(delivery);
     const dayName = deliveryDayName(delivery);
     const orders = await getTodaysOrders(dateStr);
+
+    // Sync all today's orders to the delivery tab (catches any that weren't
+    // written in real-time, e.g. early orders or SMS processing hiccups)
+    for (const order of orders) {
+      try {
+        await updateDeliveryTabOrder(order.name, order.quantities);
+      } catch (syncErr) {
+        logger.error(`Failed to sync order for "${order.name}" to delivery tab`, { error: syncErr });
+      }
+    }
 
     // Only send emails for orders that weren't already emailed on SMS receipt
     const unsent = orders.filter((o) => !o.emailed);
