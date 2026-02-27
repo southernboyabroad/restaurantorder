@@ -164,7 +164,7 @@ async function afternoonJob(): Promise<void> {
     // written in real-time, e.g. early orders or SMS processing hiccups)
     for (const order of orders) {
       try {
-        await updateDeliveryTabOrder(order.name, order.quantities);
+        await updateDeliveryTabOrder(order.name, order.quantities, delivery);
       } catch (syncErr) {
         logger.error(`Failed to sync order for "${order.name}" to delivery tab`, { error: syncErr });
       }
