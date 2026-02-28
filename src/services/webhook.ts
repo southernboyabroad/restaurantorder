@@ -336,9 +336,16 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
           logger.error('Failed to update delivery tab for decline', { error: tabErr });
         }
 
-        const declineMsg = earlyOrder
-          ? `Got it — no order for ${DAY_NAMES[orderDayOfWeek]}. You won't get a text that day.`
-          : buildConfirmationMessage(customer.route, orderDayOfWeek);
+        let declineMsg: string;
+        if (earlyOrder) {
+          const todayDow = new Date().getDay();
+          const skipNote = orderDayOfWeek === todayDow
+            ? "You won't get another text today."
+            : `You won't be getting a text on ${DAY_NAMES[orderDayOfWeek]}.`;
+          declineMsg = `Got it — no order for ${DAY_NAMES[orderDayOfWeek]}. ${skipNote}`;
+        } else {
+          declineMsg = buildConfirmationMessage(customer.route, orderDayOfWeek);
+        }
         await sendSms(from, declineMsg);
         await forwardToAdmin('out', customer.name, declineMsg, from);
         res.type('text/xml').send('<Response></Response>');
