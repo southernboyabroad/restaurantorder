@@ -423,7 +423,11 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     if (earlyOrder) {
       const deliveryDate = getDeliveryDate(new Date(`${orderDateStr}T12:00:00`));
       const deliveryDay = DAY_NAMES[deliveryDate.getDay()];
-      confirmationMsg = `Got it! Your order for ${deliveryDay} is locked in. You won't get a text on ${DAY_NAMES[orderDayOfWeek]}.\n\n${itemLines}`;
+      const todayDow = new Date().getDay();
+      const skipNote = orderDayOfWeek === todayDow
+        ? "You won't get another text today."
+        : `You won't be getting a text on ${DAY_NAMES[orderDayOfWeek]}.`;
+      confirmationMsg = `Got it! Your order for ${deliveryDay} is locked in. ${skipNote}\n\n${itemLines}`;
     } else {
       confirmationMsg = buildConfirmationMessage(customer.route, orderDayOfWeek) + '\n\n' + itemLines;
     }
