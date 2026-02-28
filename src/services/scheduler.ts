@@ -126,13 +126,15 @@ async function reminderJob(): Promise<void> {
     // In test mode, only send to the test phone number
     if (config.testPhoneNumber) {
       logger.info(`TEST MODE — sending reminder only to ${config.testPhoneNumber}`);
-      await sendSms(config.testPhoneNumber, 'Reminder');
+      const testMessage = buildOrderPromptMessage(undefined) || 'Reminder';
+      await sendSms(config.testPhoneNumber, testMessage);
       logger.info('Reminder SMS test complete: 1 sent to test number');
     } else {
       const results = await Promise.allSettled(
         needsReminder.map(async (c) => {
-          await sendSms(c.phone, 'Reminder');
-          await forwardToAdmin('out', c.name, 'Reminder', c.phone);
+          const reminderMessage = buildOrderPromptMessage(c.route) || 'Reminder';
+          await sendSms(c.phone, reminderMessage);
+          await forwardToAdmin('out', c.name, reminderMessage, c.phone);
         }),
       );
 

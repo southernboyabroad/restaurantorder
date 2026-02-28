@@ -4,9 +4,10 @@ Automated SMS-based order collection system. Sends text messages to customers on
 
 ## How It Works
 
-1. **8:00 AM (Mon/Wed/Fri)** — The system reads your customer list from Google Sheets and sends each customer an SMS asking for their order.
-2. **Customers reply by text** — Replies are received via a Twilio webhook, parsed (regex first, OpenAI fallback), and recorded as rows in the "Orders" sheet.
-3. **2:00 PM (same days)** — The system generates a product-totals summary and emails it to your warehouse via SendGrid.
+1. **9:30 AM (Wed/Fri/Sat)** — The system reads your customer list from Google Sheets and sends each customer an SMS asking for their order.
+2. **Customers reply by text** — Replies are received via a Twilio webhook, parsed (regex first, OpenAI fallback), and recorded as rows in the "Orders" sheet and the delivery date tab.
+3. **10:30 AM & 11:15 AM** — Reminder texts are sent to customers who haven't replied yet.
+4. **11:30 AM** — Orders are aggregated by route and emailed to the warehouse via SendGrid. The delivery date tab is synced as a catch-up pass.
 
 ## Project Structure
 
@@ -169,15 +170,20 @@ docker run -d --name orders \
 | `TWILIO_AUTH_TOKEN` | Yes | Twilio Auth Token |
 | `TWILIO_PHONE_NUMBER` | Yes | Your Twilio phone number (E.164) |
 | `GOOGLE_SERVICE_ACCOUNT_KEY_BASE64` | Yes | Base64-encoded service account JSON |
-| `GOOGLE_SHEET_ID` | Yes | Google Sheet ID |
+| `GOOGLE_SHEET_ID` | Yes | Google Sheet ID (for Customers + Orders tabs) |
+| `DELIVERY_SHEET_ID` | Yes | Google Sheet ID for the delivery date tabs (DLVR M-D) |
 | `SENDGRID_API_KEY` | Yes | SendGrid API key |
 | `SENDGRID_FROM_EMAIL` | Yes | Verified sender email |
 | `WAREHOUSE_EMAIL` | Yes | Comma-separated emails to receive order summaries |
+| `SCHEDULER_ENABLED` | No | Set to `true` to enable the cron jobs (default: `false`) |
 | `OPENAI_API_KEY` | No | Enables AI order parsing fallback |
-| `PRODUCTS` | No | Comma-separated product list (default: chicken,ribs,pulled_pork,brisket,coleslaw,beans) |
-| `PORT` | No | Server port (default: 3000) |
-| `TZ` | No | Timezone (default: America/New_York) |
-| `LOG_LEVEL` | No | Winston log level (default: info) |
+| `PRODUCTS` | No | Comma-separated product list (default: `toast,4-inch,long,institutional_sandwich,dinner_rolls`) |
+| `ADMIN_PHONE_NUMBER` | No | If set, every SMS exchange is forwarded here for real-time monitoring |
+| `TEST_PHONE_NUMBER` | No | If set, the scheduler only texts this number instead of all customers |
+| `EMAIL_SIGN_OFF_NAME` | No | Name in the warehouse email sign-off line (default: `Bryant`) |
+| `PORT` | No | Server port (default: `3000`) |
+| `TZ` | No | Timezone for cron schedules (default: `America/New_York`) |
+| `LOG_LEVEL` | No | Winston log level (default: `info`) |
 
 ## Error Handling and Logging
 
