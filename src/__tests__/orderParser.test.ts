@@ -242,6 +242,19 @@ describe('parseOrderStrict', () => {
     expect(result!.quantities.toast).toBe(10);
   });
 
+  it('handles item-first with dash-quantity: "4-inch -10"', () => {
+    const result = parseOrderStrict('4-inch -10');
+    expect(result).not.toBeNull();
+    expect(result!.quantities['4-inch']).toBe(10);
+  });
+
+  it('handles item-first with dash-quantity for multiple products: "4-inch -10 toast -5"', () => {
+    const result = parseOrderStrict('4-inch -10 toast -5');
+    expect(result).not.toBeNull();
+    expect(result!.quantities['4-inch']).toBe(10);
+    expect(result!.quantities.toast).toBe(5);
+  });
+
   // ── Alias accumulation tests ──────────────────────────────────
   it('accumulates "hot dogs" and "long rolls" into a single long total', () => {
     const result = parseOrderStrict(
