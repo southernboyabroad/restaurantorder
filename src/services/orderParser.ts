@@ -19,6 +19,7 @@ const PRODUCT_ALIASES: Record<string, string> = {
   '4 in': '4-inch',
   '4 inch': '4-inch',
   '4in': '4-inch',
+  '4inch': '4-inch',
   '4-inch buns': '4-inch',
   '4-inch bun': '4-inch',
   '4 inch buns': '4-inch',
@@ -29,6 +30,8 @@ const PRODUCT_ALIASES: Record<string, string> = {
   '4 in bun': '4-inch',
   '4in buns': '4-inch',
   '4in bun': '4-inch',
+  '4inch buns': '4-inch',
+  '4inch bun': '4-inch',
   'four-inch': '4-inch',
   'four-inch hamburger bun': '4-inch',
   'four-inch buns': '4-inch',
@@ -36,24 +39,43 @@ const PRODUCT_ALIASES: Record<string, string> = {
   'four inch': '4-inch',
   'four inch buns': '4-inch',
   'four inch bun': '4-inch',
+  'hamburger bun': '4-inch',
+  'hamburger buns': '4-inch',
+  'burger bun': '4-inch',
+  'burger buns': '4-inch',
   'bun': '4-inch',
   'buns': '4-inch',
   'long': 'long',
   'long roll': 'long',
   'long rolls': 'long',
+  'long bun': 'long',
+  'long buns': 'long',
   'hot dog': 'long',
   'hot dogs': 'long',
+  'hot dog bun': 'long',
+  'hot dog buns': 'long',
   'hotdog': 'long',
   'hotdogs': 'long',
+  'hotdog bun': 'long',
+  'hotdog buns': 'long',
   'institutional_sandwich': 'institutional_sandwich',
   'institutional sandwich': 'institutional_sandwich',
   'sandwich': 'institutional_sandwich',
   'sandwiches': 'institutional_sandwich',
   'sand roll': 'institutional_sandwich',
   'sand rolls': 'institutional_sandwich',
+  'sub': 'institutional_sandwich',
+  'subs': 'institutional_sandwich',
+  'sub roll': 'institutional_sandwich',
+  'sub rolls': 'institutional_sandwich',
+  'hoagie': 'institutional_sandwich',
+  'hoagies': 'institutional_sandwich',
+  'hoagie roll': 'institutional_sandwich',
+  'hoagie rolls': 'institutional_sandwich',
   'three-inch bun': 'institutional_sandwich',
   'dinner_rolls': 'dinner_rolls',
   'dinner rolls': 'dinner_rolls',
+  'dinner roll': 'dinner_rolls',
   'dinner': 'dinner_rolls',
 };
 
@@ -165,7 +187,7 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
     const escaped = escapeRegex(label);
     const patterns = [
       new RegExp(`(\\d+)\\s+${escaped}\\b`, 'gi'),          // "10 toast"
-      new RegExp(`${escaped}\\s*[-:=]?\\s*(\\d+)`, 'gi'),   // "toast 10", "toast: 10", or "toast -10"
+      new RegExp(`${escaped}\\s*[-:=\\/]?\\s*(\\d+)`, 'gi'),   // "toast 10", "toast: 10", "toast -10", "toast/10"
     ];
     for (const pattern of patterns) {
       let m: RegExpExecArray | null;
