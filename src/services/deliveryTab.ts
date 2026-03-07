@@ -8,7 +8,9 @@ const PRODUCT_HEADERS: Record<string, string> = {
   toast: 'TOAST',
   '4-inch': '4IN',
   long: 'HOT DOGS',
+  long_topslice: 'TOP SLICE',
   institutional_sandwich: 'SANDWICH',
+  hoagie: 'HOAGIE',
   dinner_rolls: 'DINNER',
 };
 
@@ -17,9 +19,11 @@ const PRODUCT_HEADERS: Record<string, string> = {
 // own preferred column order: SANDWICH first, then 4in, TOAST, HOT DOGS, DINNER.
 const DELIVERY_PRODUCT_ORDER = [
   'institutional_sandwich',
+  'hoagie',
   '4-inch',
   'toast',
   'long',
+  'long_topslice',
   'dinner_rolls',
 ];
 
@@ -28,7 +32,9 @@ const PRODUCT_ABBREVS: Record<string, string> = {
   toast: 'T',
   '4-inch': '4in',
   long: 'H',
+  long_topslice: 'TSL',
   institutional_sandwich: 'S',
+  hoagie: 'Hg',
   dinner_rolls: 'D',
 };
 

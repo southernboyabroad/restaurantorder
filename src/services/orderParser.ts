@@ -58,6 +58,14 @@ const PRODUCT_ALIASES: Record<string, string> = {
   'hotdogs': 'long',
   'hotdog bun': 'long',
   'hotdog buns': 'long',
+  // Top slice long roll
+  'long_topslice': 'long_topslice',
+  'top slice': 'long_topslice',
+  'top slice long': 'long_topslice',
+  'top slice long roll': 'long_topslice',
+  'top slice hot dog': 'long_topslice',
+  'top slice bun': 'long_topslice',
+  'topslice': 'long_topslice',
   'institutional_sandwich': 'institutional_sandwich',
   'institutional sandwich': 'institutional_sandwich',
   'sandwich': 'institutional_sandwich',
@@ -68,10 +76,10 @@ const PRODUCT_ALIASES: Record<string, string> = {
   'subs': 'institutional_sandwich',
   'sub roll': 'institutional_sandwich',
   'sub rolls': 'institutional_sandwich',
-  'hoagie': 'institutional_sandwich',
-  'hoagies': 'institutional_sandwich',
-  'hoagie roll': 'institutional_sandwich',
-  'hoagie rolls': 'institutional_sandwich',
+  'hoagie': 'hoagie',
+  'hoagies': 'hoagie',
+  'hoagie roll': 'hoagie',
+  'hoagie rolls': 'hoagie',
   'three-inch bun': 'institutional_sandwich',
   'dinner_rolls': 'dinner_rolls',
   'dinner rolls': 'dinner_rolls',
@@ -437,8 +445,10 @@ Extract quantities for each product. Available products: ${config.products.join(
 Important synonyms — always map these to the canonical product name:
 - "texas toast", "texas" → toast
 - "four-inch hamburger bun", "four-inch bun", "bun", "four-inch" → 4-inch
-- "hot dog" → long
-- "sandwich", "sand rolls", "three-inch bun" → institutional_sandwich
+- "hot dog", "long roll" → long
+- "top slice", "top slice hot dog", "top slice long roll" → long_topslice
+- "sandwich", "sand rolls", "three-inch bun", "sub" → institutional_sandwich
+- "hoagie", "hoagie roll" → hoagie
 - "dinner", "dinner rolls" → dinner_rolls
 Return ONLY valid JSON in this exact format: {"quantities": {"product_name": number}, "confident": true/false}
 Set confident to false if the message is ambiguous or doesn't clearly reference any products.

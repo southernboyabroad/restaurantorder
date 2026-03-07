@@ -15,7 +15,9 @@ const PRODUCT_DISPLAY_NAMES: Record<string, string> = {
   'toast': 'toast',
   '4-inch': '4 inch',
   'long': 'long',
+  'long_topslice': 'top slice',
   'institutional_sandwich': 'sandwich',
+  'hoagie': 'hoagie',
   'dinner_rolls': 'dinner rolls',
 };
 

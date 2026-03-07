@@ -39,6 +39,20 @@ const ABBREV_TO_PRODUCT: Record<string, string> = {
   'buns': '4-inch',
   'dinner': 'dinner_rolls',
   'texas toast': 'toast',
+  // Top slice long roll
+  'long_topslice': 'long_topslice',
+  'top slice': 'long_topslice',
+  'top slice long': 'long_topslice',
+  'top slice long roll': 'long_topslice',
+  'top slice hot dog': 'long_topslice',
+  'top slice bun': 'long_topslice',
+  'topslice': 'long_topslice',
+  'tsl': 'long_topslice',
+  // Hoagie (own product, not institutional sandwich)
+  'hoagie': 'hoagie',
+  'hoagies': 'hoagie',
+  'hoagie roll': 'hoagie',
+  'hoagie rolls': 'hoagie',
 };
 
 function resolveProductName(raw: string): string {
