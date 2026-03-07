@@ -16,6 +16,9 @@ function optional(name: string, fallback: string): string {
 export const config = {
   port: parseInt(optional('PORT', '3000'), 10),
   logLevel: optional('LOG_LEVEL', 'info'),
+  schedulerEnabled: optional('SCHEDULER_ENABLED', 'false').toLowerCase() === 'true',
+  testPhoneNumber: optional('TEST_PHONE_NUMBER', ''),
+  adminPhoneNumber: optional('ADMIN_PHONE_NUMBER', ''),
 
   twilio: {
     accountSid: required('TWILIO_ACCOUNT_SID'),
@@ -26,6 +29,7 @@ export const config = {
   google: {
     serviceAccountKeyBase64: required('GOOGLE_SERVICE_ACCOUNT_KEY_BASE64'),
     sheetId: required('GOOGLE_SHEET_ID'),
+    deliverySheetId: required('DELIVERY_SHEET_ID'),
   },
 
   sendgrid: {
@@ -38,7 +42,9 @@ export const config = {
     apiKey: optional('OPENAI_API_KEY', ''),
   },
 
-  products: optional('PRODUCTS', 'chicken,ribs,pulled_pork,brisket,coleslaw,beans')
+  emailSignOffName: optional('EMAIL_SIGN_OFF_NAME', 'Bryant'),
+
+  products: optional('PRODUCTS', 'toast,4-inch,long,institutional_sandwich,dinner_rolls')
     .split(',')
     .map((p) => p.trim().toLowerCase()),
 } as const;
