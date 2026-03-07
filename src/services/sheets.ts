@@ -53,6 +53,14 @@ const ABBREV_TO_PRODUCT: Record<string, string> = {
   'hoagies': 'hoagie',
   'hoagie roll': 'hoagie',
   'hoagie rolls': 'hoagie',
+  'sub': 'hoagie',
+  'subs': 'hoagie',
+  'sub roll': 'hoagie',
+  'sub rolls': 'hoagie',
+  'sausage roll': 'hoagie',
+  'sausage rolls': 'hoagie',
+  'sausage bun': 'hoagie',
+  'sausage buns': 'hoagie',
 };
 
 function resolveProductName(raw: string): string {
