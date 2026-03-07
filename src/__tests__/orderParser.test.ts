@@ -255,6 +255,26 @@ describe('parseOrderStrict', () => {
     expect(result!.quantities.toast).toBe(5);
   });
 
+  it('handles "4 in - 5" (space-dash-space quantity) → 4-inch: 5', () => {
+    const result = parseOrderStrict('4 in - 5');
+    expect(result).not.toBeNull();
+    expect(result!.quantities['4-inch']).toBe(5);
+  });
+
+  it('handles "4 in -5" (dash-no-space quantity) → 4-inch: 5', () => {
+    const result = parseOrderStrict('4 in -5');
+    expect(result).not.toBeNull();
+    expect(result!.quantities['4-inch']).toBe(5);
+  });
+
+  it('parses 3-item order containing "4 in - 5": "10 toast, 4 in - 5, 6 long"', () => {
+    const result = parseOrderStrict('10 toast, 4 in - 5, 6 long');
+    expect(result).not.toBeNull();
+    expect(result!.quantities.toast).toBe(10);
+    expect(result!.quantities['4-inch']).toBe(5);
+    expect(result!.quantities.long).toBe(6);
+  });
+
   // ── Alias accumulation tests ──────────────────────────────────
   it('accumulates "hot dogs" and "long rolls" into a single long total', () => {
     const result = parseOrderStrict(
