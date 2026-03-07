@@ -44,7 +44,7 @@ export const config = {
 
   emailSignOffName: optional('EMAIL_SIGN_OFF_NAME', 'Bryant'),
 
-  products: optional('PRODUCTS', 'toast,4-inch,long,institutional_sandwich,dinner_rolls')
+  products: optional('PRODUCTS', 'toast,4-inch,long,long_topslice,institutional_sandwich,hoagie,dinner_rolls')
     .split(',')
     .map((p) => p.trim().toLowerCase()),
 } as const;
