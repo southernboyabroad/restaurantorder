@@ -125,6 +125,8 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   // "a tray of toast" → "1 toast", "3 trays of toast" → "3 toast", "3 trays toast" → "3 toast"
   cleaned = cleaned.replace(/\ba\s+trays?\s+(of\s+)?/gi, '1 ');
   cleaned = cleaned.replace(/\btrays?\s+(of\s+)?/gi, '');
+  // "4- inch" or "4- in" → "4-inch" / "4-in" (space after hyphen in product names)
+  cleaned = cleaned.replace(/(\d+)-\s+/g, '$1-');
   const normalized = wordsToDigits(cleaned);
 
   // Build a list of (name-to-match, canonical-product) pairs.
@@ -164,8 +166,8 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   for (const { label, product } of namePairs) {
     const escaped = escapeRegex(label);
     const patterns = [
-      new RegExp(`(\\d+)\\s+${escaped}\\b`, 'gi'),        // "10 toast"
-      new RegExp(`${escaped}\\s*[:=]?\\s*(\\d+)`, 'gi'),   // "toast 10" or "toast: 10"
+      new RegExp(`(\\d+)\\s+${escaped}\\b`, 'gi'),          // "10 toast"
+      new RegExp(`${escaped}\\s*[-:=]?\\s*(\\d+)`, 'gi'),   // "toast 10", "toast: 10", "toast -10"
     ];
     for (const pattern of patterns) {
       let m: RegExpExecArray | null;
@@ -315,6 +317,8 @@ const DECLINE_PATTERNS = [
   /\bnot\s*today\b/i,
   /\bno\s*thank(s| you)\b/i,
   /^\s*no\s*$/i,
+  /^\s*0\s*$/,         // bare "0" — no order this week
+  /^\s*zero\s*$/i,     // "zero"
   /\bwe\s*(will)?\s*pass\b/i,
   /\bwe'?re\s+closed\b/i,
   /\bclosed\s*(today|this\s*week)?\b/i,
