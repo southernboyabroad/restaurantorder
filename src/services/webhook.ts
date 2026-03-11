@@ -287,6 +287,17 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     // Parse the order (pass default product and product order for bare-number mapping)
     const parsed = await parseOrder(body, customer.defaultProduct, customer.productOrder);
 
+    // Apply per-customer product remapping (e.g. Tilly's: long → top_slice)
+    if (customer.productMap && Object.keys(customer.productMap).length > 0) {
+      for (const [src, dest] of Object.entries(customer.productMap)) {
+        if (src in parsed.quantities) {
+          parsed.quantities[dest] = (parsed.quantities[dest] || 0) + parsed.quantities[src];
+          delete parsed.quantities[src];
+          logger.info('Applied customer product remap', { customer: customer.name, src, dest });
+        }
+      }
+    }
+
     const hasItems = Object.values(parsed.quantities).some((qty) => qty > 0);
 
     if (!hasItems) {

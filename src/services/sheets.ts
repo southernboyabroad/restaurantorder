@@ -3,7 +3,7 @@ import { config } from '../config';
 import logger from '../logger';
 
 // ── Sheet layout ────────────────────────────────────────────────
-// Sheet "Customers"  → columns: Name | Phone | Default Product (optional) | Route (optional) | Product Order (optional) | SMS Days (optional)
+// Sheet "Customers"  → columns: Name | Phone | Default Product (optional) | Route (optional) | Product Order (optional) | SMS Days (optional) | Product Map (optional)
 // Sheet "Orders"     → columns: Date | Phone | Name | Route | product1 | product2 | … | Raw Reply
 // ────────────────────────────────────────────────────────────────
 
@@ -40,6 +40,12 @@ const ABBREV_TO_PRODUCT: Record<string, string> = {
   'dinner': 'dinner_rolls',
   'hoagie': 'hoagie',
   'hoagies': 'hoagie',
+  'sub': 'hoagie',
+  'subs': 'hoagie',
+  'sub roll': 'hoagie',
+  'sub rolls': 'hoagie',
+  'sausage roll': 'hoagie',
+  'sausage rolls': 'hoagie',
   'top_slice': 'top_slice',
   'top slice': 'top_slice',
   'top slices': 'top_slice',
@@ -58,6 +64,7 @@ export interface Customer {
   route?: string; // delivery route number, e.g. "25252"
   productOrder?: string[]; // positional product mapping, e.g. ["toast", "4-inch"]
   smsDays?: number[]; // days-of-week to send SMS (JS convention: 0=Sun … 6=Sat). If omitted, uses the route's default schedule.
+  productMap?: Record<string, string>; // per-customer product remapping, e.g. { long: "top_slice" }
 }
 
 export interface OrderRow {
@@ -99,7 +106,7 @@ export async function getCustomers(): Promise<Customer[]> {
   const sheets = getClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: config.google.sheetId,
-    range: 'Customers!A2:F', // skip header; col C = default product, col D = route, col E = product order, col F = SMS days
+    range: 'Customers!A2:G', // skip header; col C = default product, col D = route, col E = product order, col F = SMS days, col G = product map
   });
 
   const rows = res.data.values || [];
@@ -117,6 +124,15 @@ export async function getCustomers(): Promise<Customer[]> {
         : undefined,
       smsDays: row[5]
         ? row[5].split(',').map((s: string) => parseInt(s.trim(), 10)).filter((n: number) => !isNaN(n))
+        : undefined,
+      productMap: row[6]
+        ? Object.fromEntries(
+            row[6].split(',')
+              .map((s: string) => s.trim())
+              .filter(Boolean)
+              .map((pair: string) => pair.split(':').map((p: string) => p.trim().toLowerCase()))
+              .filter((parts: string[]) => parts.length === 2),
+          )
         : undefined,
     }));
 
