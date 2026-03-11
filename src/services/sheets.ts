@@ -38,6 +38,11 @@ const ABBREV_TO_PRODUCT: Record<string, string> = {
   'bun': '4-inch',
   'buns': '4-inch',
   'dinner': 'dinner_rolls',
+  'hoagie': 'hoagie',
+  'hoagies': 'hoagie',
+  'top_slice': 'top_slice',
+  'top slice': 'top_slice',
+  'top slices': 'top_slice',
   'texas toast': 'toast',
 };
 

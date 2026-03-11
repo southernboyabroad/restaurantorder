@@ -10,6 +10,8 @@ const PRODUCT_HEADERS: Record<string, string> = {
   long: 'HOT DOGS',
   institutional_sandwich: 'SANDWICH',
   dinner_rolls: 'DINNER',
+  hoagie: 'HOAGIE',
+  top_slice: 'TOP SLICE',
 };
 
 // Column order for the delivery tab (matches the old spreadsheet layout).
@@ -21,6 +23,8 @@ const DELIVERY_PRODUCT_ORDER = [
   'toast',
   'long',
   'dinner_rolls',
+  'hoagie',
+  'top_slice',
 ];
 
 // Short abbreviations shown in column B (customer default product)
@@ -30,6 +34,8 @@ const PRODUCT_ABBREVS: Record<string, string> = {
   long: 'H',
   institutional_sandwich: 'S',
   dinner_rolls: 'D',
+  hoagie: 'Hg',
+  top_slice: 'TS',
 };
 
 // ── Delivery date calculation ────────────────────────────────────

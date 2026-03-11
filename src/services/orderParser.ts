@@ -55,6 +55,11 @@ const PRODUCT_ALIASES: Record<string, string> = {
   'dinner_rolls': 'dinner_rolls',
   'dinner rolls': 'dinner_rolls',
   'dinner': 'dinner_rolls',
+  'hoagie': 'hoagie',
+  'hoagies': 'hoagie',
+  'top_slice': 'top_slice',
+  'top slice': 'top_slice',
+  'top slices': 'top_slice',
 };
 
 // ── Word-number conversion ──────────────────────────────────────
@@ -422,6 +427,8 @@ Important synonyms — always map these to the canonical product name:
 - "hot dog" → long
 - "sandwich", "sand rolls", "three-inch bun" → institutional_sandwich
 - "dinner", "dinner rolls" → dinner_rolls
+- "hoagies" → hoagie
+- "top slice", "top slices" → top_slice
 Return ONLY valid JSON in this exact format: {"quantities": {"product_name": number}, "confident": true/false}
 Set confident to false if the message is ambiguous or doesn't clearly reference any products.
 If a product isn't mentioned, omit it (don't set it to 0).`;
