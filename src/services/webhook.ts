@@ -155,11 +155,12 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
   // ── Check ordering window ──────────────────────────────────────
   // Inside the normal window (Wed/Fri/Sat 9:30 AM - 1 PM) → process normally
   // Early order window (after 6 PM on ordering days, or non-ordering days) → accept for next delivery
-  // Dead zone (1 PM - 6 PM on ordering days) → stay silent
+  // Dead zone (1 PM - 6 PM on ordering days) → stay silent (admin is exempt)
+  const isAdminSender = !!config.adminPhoneNumber && normalizePhone(from) === normalizePhone(config.adminPhoneNumber);
   const insideWindow = isInsideOrderingWindow();
   const earlyOrder = !insideWindow && isEarlyOrderWindow();
 
-  if (!insideWindow && !earlyOrder) {
+  if (!insideWindow && !earlyOrder && !isAdminSender) {
     logger.info('Outside ordering window — ignoring inbound SMS (no bot reply)', { from });
     res.type('text/xml').send('<Response></Response>');
     return;
@@ -192,7 +193,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
   try {
     // Look up customer
     const customer = await findCustomerByPhone(from);
-    const isAdmin = !!config.adminPhoneNumber && normalizePhone(from) === normalizePhone(config.adminPhoneNumber);
+    const isAdmin = isAdminSender;
 
     // Forward inbound SMS to admin so they can follow along
     const customerLabel = customer?.name || 'Unknown';

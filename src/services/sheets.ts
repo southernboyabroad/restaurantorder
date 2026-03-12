@@ -367,25 +367,27 @@ export async function findCustomerByPhone(phone: string): Promise<Customer | und
 
 export async function findCustomerByNameHint(hint: string): Promise<{ customer: Customer; ambiguous?: string[] } | null> {
   const customers = await getCustomers();
-  const lower = hint.toLowerCase().trim();
+  // Strip apostrophes so "Dad's BBQ" matches "Dads BBQ" and vice-versa
+  const norm = (s: string) => s.toLowerCase().trim().replace(/[''']/g, '');
+  const lower = norm(hint);
 
-  // Exact match first (case-insensitive)
-  const exact = customers.find((c) => c.name.toLowerCase().trim() === lower);
+  // Exact match first (case-insensitive, apostrophe-insensitive)
+  const exact = customers.find((c) => norm(c.name) === lower);
   if (exact) return { customer: exact };
 
   // Partial match — name contains the hint
-  const partial = customers.filter((c) => c.name.toLowerCase().includes(lower));
+  const partial = customers.filter((c) => norm(c.name).includes(lower));
   if (partial.length === 1) return { customer: partial[0] };
   if (partial.length > 1) {
     // If all matches share the same name (e.g. same restaurant, multiple phone numbers),
     // treat it as a single match — the order row uses the name, not the phone.
-    const uniqueNames = new Set(partial.map((c) => c.name.toLowerCase().trim()));
+    const uniqueNames = new Set(partial.map((c) => norm(c.name)));
     if (uniqueNames.size === 1) return { customer: partial[0] };
     return { customer: partial[0], ambiguous: partial.map((c) => c.name) };
   }
 
   // Try the other direction — hint contains the customer name
-  const reverse = customers.filter((c) => lower.includes(c.name.toLowerCase().trim()));
+  const reverse = customers.filter((c) => lower.includes(norm(c.name)));
   if (reverse.length === 1) return { customer: reverse[0] };
 
   return null;
