@@ -10,6 +10,12 @@ import { sendWarehouseEmail } from './email';
 import { isInsideOrderingWindow, isEarlyOrderWindow, getNextOrderingDate } from './orderingWindow';
 import logger from '../logger';
 
+// Short delay so replies feel personal rather than instant/automated
+const replyDelay = () =>
+  process.env.NODE_ENV !== 'test'
+    ? new Promise<void>((resolve) => setTimeout(resolve, 15_000))
+    : Promise.resolve();
+
 // ── Order correction handler ────────────────────────────────────
 // Admin texts:    "change Waldo's toast to 15"
 // Customer texts: "change my toast to 15" or "change toast to 15"
@@ -314,6 +320,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
         } else {
           followUp = `Great! Please reply with your order, like:\ntoast 10, 4-inch 5, hot dog 20`;
         }
+        await replyDelay();
         await sendSms(from, followUp);
         await forwardToAdmin('out', customer.name, followUp, from);
         res.type('text/xml').send('<Response></Response>');
@@ -350,6 +357,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
         const declineMsg = earlyOrder
           ? `Got it — no order for ${DAY_NAMES[orderDayOfWeek]}. You won't get a text that day.`
           : buildConfirmationMessage(customer.route, orderDayOfWeek);
+        await replyDelay();
         await sendSms(from, declineMsg);
         await forwardToAdmin('out', customer.name, declineMsg, from);
         res.type('text/xml').send('<Response></Response>');
@@ -360,6 +368,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       if (isCalledInReply(body)) {
         logger.info('Called-in reply detected — notifying admin', { from, body, name: customer.name });
         const calledInMsg = `Got it — ${customer.name} called their order in. We'll get it entered.`;
+        await replyDelay();
         await sendSms(from, calledInMsg);
         await forwardToAdmin('in', customer.name, `⚠️ ${customer.name} says they called their order in. Please enter it manually.`, from);
         res.type('text/xml').send('<Response></Response>');
@@ -378,6 +387,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
           // Fall through to the order-recording logic below
         } else {
           const noPrevMsg = `Hi ${customer.name}, we don't have a previous order on file for you. Please reply with your order like:\ntoast 10, 4-inch 5, hot dog 20`;
+          await replyDelay();
           await sendSms(from, noPrevMsg);
           await forwardToAdmin('out', customer.name, noPrevMsg, from);
           res.type('text/xml').send('<Response></Response>');
@@ -387,6 +397,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
         // Could not parse anything useful
         logger.warn('Could not parse order from reply', { from, body });
         const noParseMsg = `Hi ${customer.name}, we couldn't understand your order. Please reply with quantities like:\ntoast 10, 4-inch 5, hot dog 20`;
+        await replyDelay();
         await sendSms(from, noParseMsg);
         await forwardToAdmin('out', customer.name, noParseMsg, from);
         res.type('text/xml').send('<Response></Response>');
@@ -442,11 +453,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       confirmationMsg += '\n\n⚠️ We interpreted your message with AI — please double-check and reply again if anything is wrong.';
     }
 
-    // Short delay so the reply feels personal rather than instant/automated
-    if (process.env.NODE_ENV !== 'test') {
-      await new Promise((resolve) => setTimeout(resolve, 15_000));
-    }
-
+    await replyDelay();
     await sendSms(from, confirmationMsg);
     await forwardToAdmin('out', customer.name, confirmationMsg, from);
 
