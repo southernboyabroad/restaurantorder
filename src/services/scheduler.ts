@@ -58,7 +58,15 @@ async function morningJob(): Promise<void> {
       const toSend = customers
         .filter((c) => !c.smsDays || c.smsDays.includes(dow))
         .filter((c) => !alreadyOrderedNames.has(c.name.toLowerCase()))
-        .map((c) => ({ customer: c, message: buildOrderPromptMessage(c.route) }))
+        .map((c) => {
+          const routeMsg = buildOrderPromptMessage(c.route);
+          // If the route has no text today but this customer has an explicit smsDays
+          // override that includes today, use a day-appropriate message instead.
+          const message = (routeMsg === null && c.smsDays?.includes(dow))
+            ? 'Good morning... what can I get you for tomorrow?'
+            : routeMsg;
+          return { customer: c, message };
+        })
         .filter((entry): entry is { customer: typeof entry.customer; message: string } => entry.message !== null);
 
       const skippedRoute = customers.length - customers.filter((c) => !c.smsDays || c.smsDays.includes(dow)).length;
@@ -115,7 +123,7 @@ async function reminderJob(): Promise<void> {
       (c) =>
         !orderedNames.has(c.name.toLowerCase()) &&
         (!c.smsDays || c.smsDays.includes(dow)) &&
-        buildOrderPromptMessage(c.route) !== null,
+        (buildOrderPromptMessage(c.route) !== null || c.smsDays?.includes(dow)),
     );
 
     if (needsReminder.length === 0) {
