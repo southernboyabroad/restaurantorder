@@ -23,8 +23,8 @@ const DELIVERY_PRODUCT_ORDER = [
   'toast',
   'long',
   'dinner_rolls',
-  'hoagie',
   'top_slice',
+  'hoagie',
 ];
 
 // Short abbreviations shown in column B (customer default product)
