@@ -174,6 +174,18 @@ export async function ensureOrdersSheet(): Promise<void> {
 
 // ── Append an order row ─────────────────────────────────────────
 
+// ── Column layout expected by the Restaurant_Data tab on the 25252 sheet ──
+// A = Name | B = Date | C = SANDWICH | D = 4IN | E = TOAST | F = HOT DOGS | G = DINNER | H = TOP SLICE | I = HOAGIE
+const RESTAURANT_DATA_COLUMNS = [
+  'institutional_sandwich', // C
+  '4-inch',                 // D
+  'toast',                  // E
+  'long',                   // F
+  'dinner_rolls',            // G
+  'top_slice',              // H
+  'hoagie',                 // I
+] as const;
+
 export async function appendOrder(order: OrderRow): Promise<void> {
   const sheets = getClient();
   const row = [
@@ -191,6 +203,24 @@ export async function appendOrder(order: OrderRow): Promise<void> {
     valueInputOption: 'RAW',
     requestBody: { values: [row] },
   });
+
+  // If this is a route 25252 order and the dedicated sheet is configured,
+  // also write directly to its Restaurant_Data tab in the column order the
+  // grid formulas already expect (A=Name, B=Date, C-I=products).
+  if (order.route === '25252' && config.google.sheetId25252) {
+    const restaurantDataRow = [
+      order.name,
+      order.date,
+      ...RESTAURANT_DATA_COLUMNS.map((p) => order.quantities[p] ?? 0),
+    ];
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: config.google.sheetId25252,
+      range: 'Restaurant_Data!A:A',
+      valueInputOption: 'RAW',
+      requestBody: { values: [restaurantDataRow] },
+    });
+    logger.info(`Order also written to Restaurant_Data tab for route 25252 (${order.name})`);
+  }
 
   logger.info(`Order recorded for ${order.name} (${order.phone})`);
 }
