@@ -177,7 +177,8 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   for (const { label, product } of namePairs) {
     const escaped = escapeRegex(label);
     const patterns = [
-      new RegExp(`(\\d+)\\s+${escaped}\\b`, 'gi'),          // "10 toast"
+      new RegExp(`(\\d+)\\s+${escaped}\\b`, 'gi'),           // "10 toast"
+      new RegExp(`(\\d+)\\s*[-:=]\\s*${escaped}\\b`, 'gi'), // "5 - toast", "5: toast"
       new RegExp(`${escaped}\\s*[-:=]?\\s*(\\d+)`, 'gi'),   // "toast 10", "toast: 10", "toast -10"
     ];
     for (const pattern of patterns) {
@@ -216,7 +217,7 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   // If no products matched but the message contains bare numbers, try positional mapping.
   // A customer with productOrder: ["toast", "4-inch"] who texts "4 and 3" gets
   // { toast: 4, "4-inch": 3 }.
-  if (matchCount === 0 && productOrder && productOrder.length > 0) {
+  if (matchCount === 0 && productOrder && productOrder.length > 0 && normalized.length <= 80) {
     const bareNumbers = [...normalized.matchAll(/\b(\d+)\b/g)].map((m) => parseInt(m[1], 10));
     if (bareNumbers.length > 0 && bareNumbers.length <= productOrder.length) {
       for (let i = 0; i < bareNumbers.length; i++) {
@@ -233,7 +234,7 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
 
   // If no products matched but the message is just a number (e.g. "12" or "I'll take 12"),
   // and the customer has a default product, assume they mean that product.
-  if (matchCount === 0 && defaultProduct) {
+  if (matchCount === 0 && defaultProduct && normalized.length <= 80) {
     const bareNumber = normalized.match(/\b(\d+)\b/);
     if (bareNumber) {
       quantities[defaultProduct] = parseInt(bareNumber[1], 10);
