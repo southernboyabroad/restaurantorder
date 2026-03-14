@@ -31,6 +31,7 @@ export const config = {
     sheetId: required('GOOGLE_SHEET_ID'),
     deliverySheetId: required('DELIVERY_SHEET_ID'),
     sheetId25252: optional('SHEET_ID_25252', ''),
+    sheetId25248: optional('SHEET_ID_25248', ''),
   },
 
   sendgrid: {

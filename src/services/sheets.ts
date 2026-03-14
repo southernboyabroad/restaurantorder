@@ -174,17 +174,83 @@ export async function ensureOrdersSheet(): Promise<void> {
 
 // ── Append an order row ─────────────────────────────────────────
 
-// ── Column layout expected by the Restaurant_Data tab on the 25252 sheet ──
-// A = Name | B = Date | C = SANDWICH | D = 4IN | E = TOAST | F = HOT DOGS | G = DINNER | H = TOP SLICE | I = HOAGIE
+// ── Column layout expected by the Restaurant_Data tab (columns C–I) ─────────
+// C = SANDWICH | D = 4IN | E = TOAST | F = HOT DOGS | G = DINNER | H = TOP SLICE | I = HOAGIE
 const RESTAURANT_DATA_COLUMNS = [
   'institutional_sandwich', // C
   '4-inch',                 // D
   'toast',                  // E
   'long',                   // F
-  'dinner_rolls',            // G
+  'dinner_rolls',           // G
   'top_slice',              // H
   'hoagie',                 // I
 ] as const;
+
+// Routes that have a dedicated Restaurant_Data sheet
+const RESTAURANT_DATA_SHEETS: Record<string, string | undefined> = {
+  '25252': config.google.sheetId25252,
+  '25248': config.google.sheetId25248,
+};
+
+// ── Find the row in Restaurant_Data whose column A matches the customer name,
+// then update column B (date) and columns C–I (quantities) in place.
+// Name matching is case-insensitive and apostrophe-insensitive so that
+// e.g. "WALDO'S RESTAURANT" matches a row labelled "WALDOS".
+
+async function updateRestaurantDataRow(
+  sheetId: string,
+  customerName: string,
+  date: string,
+  quantities: Record<string, number>,
+): Promise<void> {
+  const sheets = getClient();
+  const norm = (s: string) => s.toLowerCase().trim().replace(/[''']/g, '');
+  const target = norm(customerName);
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: sheetId,
+    range: 'Restaurant_Data!A:A',
+  });
+
+  const rows = res.data.values || [];
+  let rowNumber = -1;
+
+  // Exact match (after normalisation)
+  for (let i = 0; i < rows.length; i++) {
+    if (norm(rows[i][0] || '') === target) { rowNumber = i + 1; break; }
+  }
+
+  // Fallback: row label is contained in the customer name, or vice-versa
+  if (rowNumber === -1) {
+    for (let i = 0; i < rows.length; i++) {
+      const label = norm(rows[i][0] || '');
+      if (label && (target.includes(label) || label.includes(target))) {
+        rowNumber = i + 1; break;
+      }
+    }
+  }
+
+  if (rowNumber === -1) {
+    logger.warn(`Restaurant_Data: no row found for "${customerName}" on sheet ${sheetId} — skipping`);
+    return;
+  }
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: sheetId,
+    requestBody: {
+      valueInputOption: 'RAW',
+      data: [
+        { range: `Restaurant_Data!B${rowNumber}`, values: [[date]] },
+        {
+          range: `Restaurant_Data!C${rowNumber}:I${rowNumber}`,
+          values: [RESTAURANT_DATA_COLUMNS.map((p) => quantities[p] ?? 0)],
+        },
+      ],
+    },
+  });
+
+  logger.info(`Restaurant_Data row ${rowNumber} updated for "${customerName}" on sheet ${sheetId}`);
+}
 
 export async function appendOrder(order: OrderRow): Promise<void> {
   const sheets = getClient();
@@ -204,22 +270,11 @@ export async function appendOrder(order: OrderRow): Promise<void> {
     requestBody: { values: [row] },
   });
 
-  // If this is a route 25252 order and the dedicated sheet is configured,
-  // also write directly to its Restaurant_Data tab in the column order the
-  // grid formulas already expect (A=Name, B=Date, C-I=products).
-  if (order.route === '25252' && config.google.sheetId25252) {
-    const restaurantDataRow = [
-      order.name,
-      order.date,
-      ...RESTAURANT_DATA_COLUMNS.map((p) => order.quantities[p] ?? 0),
-    ];
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: config.google.sheetId25252,
-      range: 'Restaurant_Data!A:A',
-      valueInputOption: 'RAW',
-      requestBody: { values: [restaurantDataRow] },
-    });
-    logger.info(`Order also written to Restaurant_Data tab for route 25252 (${order.name})`);
+  // If this route has a dedicated Restaurant_Data sheet, find the matching
+  // row by name and update quantities in place (never append).
+  const restaurantSheetId = RESTAURANT_DATA_SHEETS[order.route];
+  if (restaurantSheetId) {
+    await updateRestaurantDataRow(restaurantSheetId, order.name, order.date, order.quantities);
   }
 
   logger.info(`Order recorded for ${order.name} (${order.phone})`);
