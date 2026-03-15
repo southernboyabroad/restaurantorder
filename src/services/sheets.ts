@@ -243,7 +243,7 @@ async function updateRestaurantDataRow(
         { range: `Restaurant_Data!B${rowNumber}`, values: [[date]] },
         {
           range: `Restaurant_Data!C${rowNumber}:I${rowNumber}`,
-          values: [RESTAURANT_DATA_COLUMNS.map((p) => quantities[p] ?? 0)],
+          values: [RESTAURANT_DATA_COLUMNS.map((p) => quantities[p] || '')],
         },
       ],
     },
