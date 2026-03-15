@@ -193,7 +193,6 @@ async function afternoonJob(): Promise<void> {
       const subject = `ADDITIONS to Route ${routeLabel}- ${deliveryDateStr}`;
       const textBody = formatSummaryText(summary, dayName);
       const htmlBody = formatSummaryHtml(summary, dayName);
-
       await sendWarehouseEmail(subject, textBody, htmlBody);
       logger.info(`Aggregated email sent for route ${routeLabel} (${summary.orderCount} orders)`);
     }
