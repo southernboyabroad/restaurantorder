@@ -266,6 +266,23 @@ const REPEAT_ORDER_PATTERNS = [
   /\bdo\s+(the\s+)?same\b/i,
 ];
 
+// ── Message reaction detector ────────────────────────────────────
+// iOS and Android both send a text message when a user "reacts" to a
+// message.  The body contains the quoted original text, which may
+// include order quantities and cause false parses.
+//   Android:  👍 to "Heads up — an order has been placed..."
+//   iOS:      Liked "Your order for Thursday is locked in..."
+// We detect these and stay silent rather than treating them as orders.
+
+export function isReactionMessage(text: string): boolean {
+  const trimmed = text.trim();
+  // Android: any short prefix (emoji or word) + ' to "' + quoted content
+  if (/^.{1,20}\s+to\s+"/i.test(trimmed)) return true;
+  // iOS reaction verbs
+  if (/^(Liked|Loved|Laughed at|Emphasized|Questioned|Disliked)\s+"/i.test(trimmed)) return true;
+  return false;
+}
+
 export function isRepeatOrderRequest(text: string): boolean {
   const trimmed = text.trim();
   if (trimmed.length > 80) return false;

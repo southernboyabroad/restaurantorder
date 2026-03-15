@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import { config } from '../config';
 import { validateTwilioWebhook, buildOrderPromptMessage, buildConfirmationMessage } from './sms';
 import { findCustomerByPhone, findCustomerByNameHint, normalizePhone, appendOrder, markOrdersAsEmailed, getLastOrderForCustomer, getTodaysOrders, updateTodaysOrder, getOtherContactsForCustomer, Customer } from './sheets';
-import { parseOrder, parseOrderStrict, isAffirmativeReply, isRepeatOrderRequest, isDeclineReply, isCalledInReply, parseCorrectionRequest, preprocessCorrectionText } from './orderParser';
+import { parseOrder, parseOrderStrict, isAffirmativeReply, isRepeatOrderRequest, isDeclineReply, isCalledInReply, parseCorrectionRequest, preprocessCorrectionText, isReactionMessage } from './orderParser';
 import { sendSms, forwardToAdmin } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
 import { formatOrderText, formatOrderHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
@@ -198,6 +198,16 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     // Forward inbound SMS to admin so they can follow along
     const customerLabel = customer?.name || 'Unknown';
     await forwardToAdmin('in', customerLabel, body, from);
+
+    // ── Ignore message reactions (👍 to "..." / Liked "...") ──────
+    // iOS and Android send a quoted copy of the original message when
+    // someone reacts to it.  That quoted text can contain order quantities
+    // and cause accidental orders.  Silently drop these.
+    if (isReactionMessage(body)) {
+      logger.info('Message reaction detected — ignoring', { from, body });
+      res.type('text/xml').send('<Response></Response>');
+      return;
+    }
 
     // ── Determine the order date ──────────────────────────────────
     // During the normal window → today's date
