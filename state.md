@@ -17,5 +17,8 @@ System is live and in production.
 ## Known Issues / In Progress
 - None currently noted
 
+## Troubleshooting Reminder
+If something looks like it should be working but isn't — check Render first. Make sure the latest changes have actually been deployed: confirm that Render is running the correct branch and that the most recent commit is live. Many "mystery" bugs turn out to be Render still running an older version of the code.
+
 ## Last Updated
 2026-03-18
