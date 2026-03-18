@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import { config } from '../config';
 import { validateTwilioWebhook, buildOrderPromptMessage, buildConfirmationMessage } from './sms';
 import { findCustomerByPhone, findCustomerByNameHint, normalizePhone, appendOrder, markOrdersAsEmailed, getLastOrderForCustomer, getTodaysOrders, updateTodaysOrder, getOtherContactsForCustomer, Customer } from './sheets';
-import { parseOrder, parseOrderStrict, isAffirmativeReply, isRepeatOrderRequest, isDeclineReply, isCalledInReply, parseCorrectionRequest, preprocessCorrectionText, isReactionMessage } from './orderParser';
+import { parseOrder, parseOrderStrict, isAffirmativeReply, isRepeatOrderRequest, isDeclineReply, isCalledInReply, parseCorrectionRequest, preprocessCorrectionText, isReactionMessage, parseAdminOrderRequest } from './orderParser';
 import { sendSms, forwardToAdmin } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
 import { formatOrderText, formatOrderHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
@@ -144,6 +144,113 @@ async function handleCorrection(
   res.type('text/xml').send('<Response></Response>');
 }
 
+// ── Admin order-on-behalf-of handler ────────────────────────────
+// Admin texts: "order for thumb suckers 10 toast 5 hoagie"
+//              "order for 13529883447 toast 10"
+
+async function handleAdminOrder(
+  from: string,
+  adminOrder: ReturnType<typeof parseAdminOrderRequest> & {},
+  res: import('express').Response,
+  orderDateStr: string,
+): Promise<void> {
+  // Look up target customer
+  let targetCustomer: Customer;
+
+  if (adminOrder.isPhone) {
+    const found = await findCustomerByPhone(normalizePhone(adminOrder.customerIdentifier));
+    if (!found) {
+      await sendSms(from, `Couldn't find a customer with phone number "${adminOrder.customerIdentifier}".`);
+      res.type('text/xml').send('<Response></Response>');
+      return;
+    }
+    targetCustomer = found;
+  } else {
+    const lookup = await findCustomerByNameHint(adminOrder.customerIdentifier);
+    if (!lookup) {
+      await sendSms(from, `Couldn't find a customer matching "${adminOrder.customerIdentifier}". Check the name and try again.`);
+      res.type('text/xml').send('<Response></Response>');
+      return;
+    }
+    if (lookup.ambiguous) {
+      const names = lookup.ambiguous.slice(0, 5).join(', ');
+      await sendSms(from, `Multiple customers match "${adminOrder.customerIdentifier}": ${names}. Please be more specific.`);
+      res.type('text/xml').send('<Response></Response>');
+      return;
+    }
+    targetCustomer = lookup.customer;
+  }
+
+  // Parse quantities
+  const parsed = parseOrderStrict(adminOrder.orderText, targetCustomer.defaultProduct, targetCustomer.productOrder);
+  const hasItems = parsed && Object.values(parsed.quantities).some((q) => q > 0);
+
+  if (!hasItems) {
+    await sendSms(from, `Couldn't understand the order. Try something like:\norder for ${targetCustomer.name} toast 10 hoagie 5`);
+    res.type('text/xml').send('<Response></Response>');
+    return;
+  }
+
+  // Apply per-customer product remapping
+  if (targetCustomer.productMap && Object.keys(targetCustomer.productMap).length > 0) {
+    for (const [src, dest] of Object.entries(targetCustomer.productMap)) {
+      if (src in parsed!.quantities) {
+        parsed!.quantities[dest] = (parsed!.quantities[dest] || 0) + parsed!.quantities[src];
+        delete parsed!.quantities[src];
+      }
+    }
+  }
+
+  // Block if they already have an order today
+  const todaysOrders = await getTodaysOrders(orderDateStr);
+  const existing = todaysOrders.find((o) => o.name.toLowerCase() === targetCustomer.name.toLowerCase());
+  if (existing) {
+    await sendSms(from, `${targetCustomer.name} already has an order today. Use "change ${targetCustomer.name}'s [product] to [qty]" to correct it instead.`);
+    res.type('text/xml').send('<Response></Response>');
+    return;
+  }
+
+  // Record the order
+  await appendOrder({
+    date: orderDateStr,
+    phone: targetCustomer.phone,
+    name: targetCustomer.name,
+    route: targetCustomer.route || '',
+    quantities: parsed!.quantities,
+    rawReply: `[Admin order] ${adminOrder.orderText}`,
+    emailed: false,
+  });
+
+  // Update delivery tab
+  try {
+    const orderDelivery = getDeliveryDate(new Date(`${orderDateStr}T12:00:00`));
+    await updateDeliveryTabOrder(targetCustomer.name, parsed!.quantities, orderDelivery);
+  } catch (tabErr) {
+    logger.error('Failed to update delivery tab for admin order', { error: tabErr });
+  }
+
+  // Send confirmation
+  const itemLines = Object.entries(parsed!.quantities)
+    .filter(([, qty]) => qty > 0)
+    .map(([product, qty]) => {
+      const display = product
+        .replace(/_/g, ' ')
+        .replace(/\blong\b/gi, 'hot dog')
+        .replace(/\binstitutional sandwich\b/gi, 'sandwich');
+      return `${display} - ${qty}`;
+    })
+    .join('\n');
+
+  const msg = `Order placed for ${targetCustomer.name}:\n\n${itemLines}`;
+  await sendSms(from, msg);
+  logger.info('Admin order placed on behalf of customer', {
+    placedBy: from,
+    customer: targetCustomer.name,
+    quantities: parsed!.quantities,
+  });
+  res.type('text/xml').send('<Response></Response>');
+}
+
 export const webhookRouter = express.Router();
 
 // Twilio sends POST to /sms when a customer replies
@@ -231,6 +338,17 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     if (correction) {
       await handleCorrection(from, customer, isAdmin, correction, res, orderDateStr);
       return;
+    }
+
+    // ── Admin ordering on behalf of a customer ──────────────────
+    // e.g. "order for thumb suckers 10 toast 5 hoagie"
+    //      "order for 13529883447 toast 10"
+    if (isAdmin) {
+      const adminOrder = parseAdminOrderRequest(body);
+      if (adminOrder) {
+        await handleAdminOrder(from, adminOrder, res, orderDateStr);
+        return;
+      }
     }
 
     // ── Admin texting in? Stay silent. ─────────────────────────

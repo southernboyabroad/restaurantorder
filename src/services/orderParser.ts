@@ -453,6 +453,60 @@ export function preprocessCorrectionText(text: string): string {
   return text.replace(/\s+to\s+(\d)/g, ' $1');
 }
 
+// ── Admin order-on-behalf-of detection ──────────────────────────
+// Admin texts:
+//   "order for thumb suckers 10 toast 5 hoagie"
+//   "order for 13529883447 toast 10 hoagie 5"
+//   "order for phone number 1352-988-3447 toast 10"
+
+export interface AdminOrderRequest {
+  customerIdentifier: string; // name hint or raw phone string
+  isPhone: boolean;
+  orderText: string;
+}
+
+const ADMIN_ORDER_PREFIX = /^(?:.*?\b)?(?:place\s+)?order\s+for\s+(?:phone\s+(?:number\s+)?)?/i;
+
+export function parseAdminOrderRequest(text: string): AdminOrderRequest | null {
+  const trimmed = text.trim();
+  if (!ADMIN_ORDER_PREFIX.test(trimmed)) return null;
+
+  const afterPrefix = trimmed.replace(ADMIN_ORDER_PREFIX, '').trim();
+  if (!afterPrefix) return null;
+
+  // Detect phone: first token has 7+ digits, or starts with + / (
+  const firstToken = afterPrefix.split(/\s+/)[0];
+  const digitCount = (firstToken.match(/\d/g) || []).length;
+  const isPhoneToken = digitCount >= 7 || firstToken.startsWith('+') || firstToken.startsWith('(');
+
+  if (isPhoneToken) {
+    const spaceIdx = afterPrefix.indexOf(' ');
+    if (spaceIdx === -1) return null; // phone only, no order text
+    return {
+      customerIdentifier: afterPrefix.slice(0, spaceIdx).trim(),
+      isPhone: true,
+      orderText: afterPrefix.slice(spaceIdx + 1).trim(),
+    };
+  }
+
+  // Name-based: scan words until we hit a digit or a recognized product keyword
+  const words = afterPrefix.split(/\s+/);
+  let nameEndIdx = -1;
+  for (let i = 0; i < words.length; i++) {
+    if (/^\d+$/.test(words[i])) { nameEndIdx = i; break; }
+    const lower = words[i].toLowerCase();
+    if (PRODUCT_ALIASES[lower] || config.products.includes(lower)) { nameEndIdx = i; break; }
+  }
+
+  if (nameEndIdx <= 0) return null; // no name found, or name starts with a product word
+
+  return {
+    customerIdentifier: words.slice(0, nameEndIdx).join(' '),
+    isPhone: false,
+    orderText: words.slice(nameEndIdx).join(' '),
+  };
+}
+
 // ── AI-assisted parser (OpenAI fallback) ────────────────────────
 
 export async function parseOrderWithAI(text: string): Promise<ParsedOrder> {
