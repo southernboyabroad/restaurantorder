@@ -158,6 +158,8 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   cleaned = cleaned.replace(/\btrays?\s+(of\s+)?/gi, '');
   // "4- inch" or "4- in" → "4-inch" / "4-in" (space after hyphen in product names)
   cleaned = cleaned.replace(/(\d+)-\s+/g, '$1-');
+  // "(5) 4 inch" → "5 4 inch" — strip parentheses around quantities
+  cleaned = cleaned.replace(/\((\d+)\)/g, '$1');
   const normalized = wordsToDigits(cleaned);
 
   // Build a list of (name-to-match, canonical-product) pairs.
