@@ -56,7 +56,7 @@ Every order writes to ALL applicable spreadsheets simultaneously. The route-spec
 A=Name, B=Phone, C=Default Product, D=Route, E=Product Order, F=SMS Days, G=Product Map
 
 ## Products (Main Orders Sheet Column Order)
-toast, 4-inch, long, institutional_sandwich, dinner_rolls, hoagie, top_slice
+toast, 4-inch, long, institutional_sandwich, dinner_rolls, hoagie, top_slice, marty, plain_marty, 5-inch
 
 ## Delivery Tab Product Order
 institutional_sandwich, 4-inch, toast, long, dinner_rolls, top_slice, hoagie

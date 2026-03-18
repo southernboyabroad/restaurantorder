@@ -50,6 +50,15 @@ const ABBREV_TO_PRODUCT: Record<string, string> = {
   'top slice': 'top_slice',
   'top slices': 'top_slice',
   'texas toast': 'toast',
+  'marty': 'marty',
+  'plain_marty': 'plain_marty',
+  'plain marty': 'plain_marty',
+  'marty no seeds': 'plain_marty',
+  'marty no seed': 'plain_marty',
+  '5-inch': '5-inch',
+  '5 inch': '5-inch',
+  '5in': '5-inch',
+  '5-in': '5-inch',
 };
 
 function resolveProductName(raw: string): string {

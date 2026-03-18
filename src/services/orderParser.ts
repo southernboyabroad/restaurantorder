@@ -66,6 +66,26 @@ const PRODUCT_ALIASES: Record<string, string> = {
   'top_slice': 'top_slice',
   'top slice': 'top_slice',
   'top slices': 'top_slice',
+  'marty': 'marty',
+  'plain_marty': 'plain_marty',
+  'plain marty': 'plain_marty',
+  'marty no seeds': 'plain_marty',
+  'marty no seed': 'plain_marty',
+  '5-inch': '5-inch',
+  '5-in': '5-inch',
+  '5 inch': '5-inch',
+  '5 in': '5-inch',
+  '5in': '5-inch',
+  'five-inch': '5-inch',
+  'five inch': '5-inch',
+  '5-inch bun': '5-inch',
+  '5-inch buns': '5-inch',
+  '5 inch bun': '5-inch',
+  '5 inch buns': '5-inch',
+  '5in bun': '5-inch',
+  '5in buns': '5-inch',
+  '5-in bun': '5-inch',
+  '5-in buns': '5-inch',
 };
 
 // ── Word-number conversion ──────────────────────────────────────
@@ -453,6 +473,9 @@ Important synonyms — always map these to the canonical product name:
 - "dinner", "dinner rolls" → dinner_rolls
 - "hoagies", "sub", "subs", "sub roll", "sub rolls", "sausage roll", "sausage rolls" → hoagie
 - "top slice", "top slices" → top_slice
+- "marty no seeds", "marty no seed" → plain_marty
+- "plain marty" → plain_marty
+- "5 inch", "5in", "five inch", "five-inch", "5-in" → 5-inch
 Return ONLY valid JSON in this exact format: {"quantities": {"product_name": number}, "confident": true/false}
 Set confident to false if the message is ambiguous or doesn't clearly reference any products.
 If a product isn't mentioned, omit it (don't set it to 0).`;
