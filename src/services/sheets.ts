@@ -183,9 +183,12 @@ export async function ensureOrdersSheet(): Promise<void> {
 
 // ── Append an order row ─────────────────────────────────────────
 
-// ── Column layout expected by the Restaurant_Data tab (columns C–I) ─────────
-// C = SANDWICH | D = 4IN | E = TOAST | F = HOT DOGS | G = DINNER | H = TOP SLICE | I = HOAGIE
-const RESTAURANT_DATA_COLUMNS = [
+// ── Column layout expected by the Restaurant_Data tab ────────────────────────
+// Columns always start at C. Each route may have a different number of product
+// columns depending on what has been set up in that spreadsheet.
+
+// Route 25252: C = SANDWICH | D = 4IN | E = TOAST | F = HOT DOGS | G = DINNER | H = TOP SLICE | I = HOAGIE
+const RESTAURANT_DATA_COLUMNS_25252 = [
   'institutional_sandwich', // C
   '4-inch',                 // D
   'toast',                  // E
@@ -193,12 +196,26 @@ const RESTAURANT_DATA_COLUMNS = [
   'dinner_rolls',           // G
   'top_slice',              // H
   'hoagie',                 // I
-] as const;
+];
+
+// Route 25248: same as 25252 plus the three new products in J, K, L
+const RESTAURANT_DATA_COLUMNS_25248 = [
+  'institutional_sandwich', // C
+  '4-inch',                 // D
+  'toast',                  // E
+  'long',                   // F
+  'dinner_rolls',           // G
+  'top_slice',              // H
+  'hoagie',                 // I
+  'marty',                  // J
+  'plain_marty',            // K
+  '5-inch',                 // L
+];
 
 // Routes that have a dedicated Restaurant_Data sheet
-const RESTAURANT_DATA_SHEETS: Record<string, string | undefined> = {
-  '25252': config.google.sheetId25252,
-  '25248': config.google.sheetId25248,
+const RESTAURANT_DATA_SHEETS: Record<string, { sheetId: string; columns: string[] } | undefined> = {
+  '25252': config.google.sheetId25252 ? { sheetId: config.google.sheetId25252, columns: RESTAURANT_DATA_COLUMNS_25252 } : undefined,
+  '25248': config.google.sheetId25248 ? { sheetId: config.google.sheetId25248, columns: RESTAURANT_DATA_COLUMNS_25248 } : undefined,
 };
 
 // ── Find the row in Restaurant_Data whose column A matches the customer name,
@@ -208,6 +225,7 @@ const RESTAURANT_DATA_SHEETS: Record<string, string | undefined> = {
 
 async function updateRestaurantDataRow(
   sheetId: string,
+  columns: string[],
   customerName: string,
   date: string,
   quantities: Record<string, number>,
@@ -251,8 +269,8 @@ async function updateRestaurantDataRow(
       data: [
         { range: `Restaurant_Data!B${rowNumber}`, values: [[date]] },
         {
-          range: `Restaurant_Data!C${rowNumber}:I${rowNumber}`,
-          values: [RESTAURANT_DATA_COLUMNS.map((p) => quantities[p] || '')],
+          range: `Restaurant_Data!C${rowNumber}:${columnLetter(2 + columns.length - 1)}${rowNumber}`,
+          values: [columns.map((p) => quantities[p] || '')],
         },
       ],
     },
@@ -281,9 +299,9 @@ export async function appendOrder(order: OrderRow): Promise<void> {
 
   // If this route has a dedicated Restaurant_Data sheet, find the matching
   // row by name and update quantities in place (never append).
-  const restaurantSheetId = RESTAURANT_DATA_SHEETS[order.route];
-  if (restaurantSheetId) {
-    await updateRestaurantDataRow(restaurantSheetId, order.name, order.date, order.quantities);
+  const restaurantSheet = RESTAURANT_DATA_SHEETS[order.route];
+  if (restaurantSheet) {
+    await updateRestaurantDataRow(restaurantSheet.sheetId, restaurantSheet.columns, order.name, order.date, order.quantities);
   }
 
   logger.info(`Order recorded for ${order.name} (${order.phone})`);
