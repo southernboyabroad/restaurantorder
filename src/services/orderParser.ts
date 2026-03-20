@@ -120,8 +120,10 @@ function wordsToDigits(text: string): string {
   // when they appear right next to a product name (handled by context in the regex step).
   // For the safe words (not ambiguous), convert them directly.
   const safeWords = { ...WORD_NUMBERS };
-  // "to", "for", "ate" are too ambiguous on their own — only "too" near a product is converted
+  // "to", "too", "for", "ate" are too ambiguous on their own — skip auto-conversion
+  // ("too" caused "If it is not too late" → long: 2 via the bare-number fallback)
   delete safeWords.to;
+  delete safeWords.too;
   delete safeWords.for;
   delete safeWords.fore;
   delete safeWords.ate;
