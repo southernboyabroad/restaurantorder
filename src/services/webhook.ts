@@ -10,6 +10,24 @@ import { sendWarehouseEmail } from './email';
 import { isInsideOrderingWindow, isEarlyOrderWindow, getNextOrderingDate } from './orderingWindow';
 import logger from '../logger';
 
+// ── Per-customer product overrides (code-defined) ────────────────
+// Applied after parsing, same as the sheet's productMap column.
+// Key = lowercase substring matched against the customer name.
+// Dunks only ever orders institutional_sandwich and toast, so "buns"
+// (which the parser maps to 4-inch) should resolve to institutional_sandwich.
+const CUSTOMER_PRODUCT_OVERRIDES: Record<string, Record<string, string>> = {
+  'dunks': { '4-inch': 'institutional_sandwich' },
+};
+
+function getEffectiveProductMap(customer: Customer): Record<string, string> {
+  const sheetMap = customer.productMap || {};
+  const overrideKey = Object.keys(CUSTOMER_PRODUCT_OVERRIDES).find(
+    (key) => customer.name.toLowerCase().includes(key),
+  );
+  const override = overrideKey ? CUSTOMER_PRODUCT_OVERRIDES[overrideKey] : {};
+  return { ...sheetMap, ...override };
+}
+
 // Short delay so replies feel personal rather than instant/automated
 const replyDelay = () =>
   process.env.NODE_ENV !== 'test'
@@ -192,8 +210,9 @@ async function handleAdminOrder(
   }
 
   // Apply per-customer product remapping
-  if (targetCustomer.productMap && Object.keys(targetCustomer.productMap).length > 0) {
-    for (const [src, dest] of Object.entries(targetCustomer.productMap)) {
+  const targetProductMap = getEffectiveProductMap(targetCustomer);
+  if (Object.keys(targetProductMap).length > 0) {
+    for (const [src, dest] of Object.entries(targetProductMap)) {
       if (src in parsed!.quantities) {
         parsed!.quantities[dest] = (parsed!.quantities[dest] || 0) + parsed!.quantities[src];
         delete parsed!.quantities[src];
@@ -423,8 +442,9 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     const parsed = await parseOrder(body, customer.defaultProduct, customer.productOrder);
 
     // Apply per-customer product remapping (e.g. Tilly's: long → top_slice)
-    if (customer.productMap && Object.keys(customer.productMap).length > 0) {
-      for (const [src, dest] of Object.entries(customer.productMap)) {
+    const effectiveProductMap = getEffectiveProductMap(customer);
+    if (Object.keys(effectiveProductMap).length > 0) {
+      for (const [src, dest] of Object.entries(effectiveProductMap)) {
         if (src in parsed.quantities) {
           parsed.quantities[dest] = (parsed.quantities[dest] || 0) + parsed.quantities[src];
           delete parsed.quantities[src];
