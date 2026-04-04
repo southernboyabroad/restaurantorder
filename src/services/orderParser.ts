@@ -5,6 +5,7 @@ import logger from '../logger';
 export interface ParsedOrder {
   quantities: Record<string, number>;
   confident: boolean;
+  declined?: boolean; // true when AI detects the customer is declining/skipping their order
 }
 
 // ── Product aliases ─────────────────────────────────────────────
@@ -534,9 +535,11 @@ Important synonyms — always map these to the canonical product name:
 - "marty no seeds", "marty no seed" → plain_marty
 - "plain marty" → plain_marty
 - "5 inch", "5in", "five inch", "five-inch", "5-in" → 5-inch
-Return ONLY valid JSON in this exact format: {"quantities": {"product_name": number}, "confident": true/false}
+If the customer is clearly declining, skipping, or not ordering (e.g. "no bread this week", "nothing for us", "we're good", "not until next week", "skip us", "closed today"), set "declined" to true and return empty quantities.
+Return ONLY valid JSON in this exact format: {"quantities": {"product_name": number}, "confident": true/false, "declined": false}
 Set confident to false if the message is ambiguous or doesn't clearly reference any products.
-If a product isn't mentioned, omit it (don't set it to 0).`;
+Set declined to true if the customer is clearly not placing an order this week.
+If a product isn't mentioned, omit it from quantities (don't set it to 0).`;
 
   try {
     const completion = await openai.chat.completions.create({
@@ -558,6 +561,7 @@ If a product isn't mentioned, omit it (don't set it to 0).`;
     return {
       quantities: parsed.quantities || {},
       confident: parsed.confident ?? false,
+      declined: parsed.declined ?? false,
     };
   } catch (err) {
     logger.error('AI order parsing failed', { error: err, input: text });

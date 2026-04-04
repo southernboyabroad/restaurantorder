@@ -477,7 +477,8 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       }
 
       // Check if the customer is declining / skipping their order
-      if (isDeclineReply(body)) {
+      // (either via keyword patterns or AI-detected intent)
+      if (isDeclineReply(body) || parsed.declined) {
         logger.info('Decline reply detected — recording zero order', { from, body, name: customer.name });
 
         // Record a zero-quantity order so the 10:30 reminder is suppressed
