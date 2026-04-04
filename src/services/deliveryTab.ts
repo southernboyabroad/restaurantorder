@@ -15,6 +15,7 @@ const PRODUCT_HEADERS: Record<string, string> = {
   marty: 'MARTY',
   plain_marty: 'PLAIN MARTY',
   '5-inch': '5IN',
+  potato_bread: 'POTATO BREAD',
 };
 
 // Column order for the delivery tab (matches the old spreadsheet layout).
@@ -31,6 +32,7 @@ const DELIVERY_PRODUCT_ORDER = [
   'marty',
   'plain_marty',
   '5-inch',
+  'potato_bread',
 ];
 
 // Short abbreviations shown in column B (customer default product)
@@ -45,6 +47,7 @@ const PRODUCT_ABBREVS: Record<string, string> = {
   marty: 'Ma',
   plain_marty: 'PM',
   '5-inch': '5in',
+  potato_bread: 'PB',
 };
 
 // ── Delivery date calculation ────────────────────────────────────

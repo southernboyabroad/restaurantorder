@@ -59,6 +59,14 @@ const ABBREV_TO_PRODUCT: Record<string, string> = {
   '5 inch': '5-inch',
   '5in': '5-inch',
   '5-in': '5-inch',
+  'potato_bread': 'potato_bread',
+  'potato bread': 'potato_bread',
+  'potato': 'potato_bread',
+  'regular bread': 'potato_bread',
+  'regular sandwich bread': 'potato_bread',
+  'sandwich bread': 'potato_bread',
+  'slice bread': 'potato_bread',
+  'sliced bread': 'potato_bread',
 };
 
 function resolveProductName(raw: string): string {
@@ -198,7 +206,7 @@ const RESTAURANT_DATA_COLUMNS_25252 = [
   'hoagie',                 // I
 ];
 
-// Route 25248: same as 25252 plus the three new products in J, K, L
+// Route 25248: same as 25252 plus the three new products in J, K, L, and potato_bread in M
 const RESTAURANT_DATA_COLUMNS_25248 = [
   'institutional_sandwich', // C
   '4-inch',                 // D
@@ -210,6 +218,7 @@ const RESTAURANT_DATA_COLUMNS_25248 = [
   'marty',                  // J
   'plain_marty',            // K
   '5-inch',                 // L
+  'potato_bread',           // M
 ];
 
 // Routes that have a dedicated Restaurant_Data sheet

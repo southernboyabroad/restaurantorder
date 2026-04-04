@@ -87,6 +87,14 @@ const PRODUCT_ALIASES: Record<string, string> = {
   '5in buns': '5-inch',
   '5-in bun': '5-inch',
   '5-in buns': '5-inch',
+  'potato_bread': 'potato_bread',
+  'potato bread': 'potato_bread',
+  'potato': 'potato_bread',
+  'regular bread': 'potato_bread',
+  'regular sandwich bread': 'potato_bread',
+  'sandwich bread': 'potato_bread',
+  'slice bread': 'potato_bread',
+  'sliced bread': 'potato_bread',
 };
 
 // ── Word-number conversion ──────────────────────────────────────

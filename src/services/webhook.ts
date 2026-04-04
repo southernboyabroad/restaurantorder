@@ -17,6 +17,8 @@ import logger from '../logger';
 // (which the parser maps to 4-inch) should resolve to institutional_sandwich.
 const CUSTOMER_PRODUCT_OVERRIDES: Record<string, Record<string, string>> = {
   'dunks': { '4-inch': 'institutional_sandwich' },
+  // Boatwright: "buns" always means institutional_sandwich, not 4-inch
+  'boatwright': { '4-inch': 'institutional_sandwich' },
 };
 
 function getEffectiveProductMap(customer: Customer): Record<string, string> {
