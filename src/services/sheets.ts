@@ -223,6 +223,29 @@ const RESTAURANT_DATA_SHEETS: Record<string, { sheetId: string; columns: string[
 // Name matching is case-insensitive and apostrophe-insensitive so that
 // e.g. "WALDO'S RESTAURANT" matches a row labelled "WALDOS".
 
+export async function syncOrdersToRestaurantDataSheets(dateStr: string): Promise<void> {
+  const orders = await getTodaysOrders(dateStr);
+  const routeOrders = orders.filter((o) => RESTAURANT_DATA_SHEETS[o.route]);
+
+  if (routeOrders.length === 0) {
+    logger.info('syncOrdersToRestaurantDataSheets: no orders found for route-specific sheets');
+    return;
+  }
+
+  logger.info(`syncOrdersToRestaurantDataSheets: syncing ${routeOrders.length} order(s) to Restaurant_Data sheets`);
+
+  const results = await Promise.allSettled(
+    routeOrders.map((order) => {
+      const sheet = RESTAURANT_DATA_SHEETS[order.route]!;
+      return updateRestaurantDataRow(sheet.sheetId, sheet.columns, order.name, order.date, order.quantities);
+    }),
+  );
+
+  const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+  const failed = results.filter((r) => r.status === 'rejected').length;
+  logger.info(`syncOrdersToRestaurantDataSheets complete: ${succeeded} synced, ${failed} failed`);
+}
+
 async function updateRestaurantDataRow(
   sheetId: string,
   columns: string[],

@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { getCustomers, getTodaysOrders, markOrdersAsEmailed } from './sheets';
+import { getCustomers, getTodaysOrders, markOrdersAsEmailed, syncOrdersToRestaurantDataSheets } from './sheets';
 import { sendSms, buildOrderPromptMessage, forwardToAdmin } from './sms';
 import { formatSummaryText, formatSummaryHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName, groupOrdersByRoute } from './orderSummary';
 import { sendWarehouseEmail } from './email';
@@ -92,6 +92,16 @@ async function morningJob(): Promise<void> {
       const succeeded = results.filter((r) => r.status === 'fulfilled').length;
       const failed = results.filter((r) => r.status === 'rejected').length;
       logger.info(`Morning SMS blast complete: ${succeeded} sent, ${failed} failed`);
+    }
+
+    // Sync any pre-entered orders (e.g. called-in orders entered manually) to
+    // route-specific Restaurant_Data sheets. This runs after the SMS blast so
+    // that customers with early orders are already skipped above, and their
+    // orders get synced to the route sheets here.
+    try {
+      await syncOrdersToRestaurantDataSheets(todayDateStr());
+    } catch (syncErr) {
+      logger.error('Failed to sync pre-entered orders to Restaurant_Data sheets', { error: syncErr });
     }
   } catch (err) {
     logger.error('Morning job failed', { error: err });
