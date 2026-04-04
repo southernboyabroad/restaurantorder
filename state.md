@@ -18,8 +18,11 @@ System is live and in production.
 ## Known Issues / In Progress
 - None currently noted
 
+## Recent Changes (continued)
+- Morning job now automatically syncs any pre-entered orders (e.g. manually entered called-in orders) to the route-specific Restaurant_Data sheets after the SMS blast runs. So if you enter an order the night before, it will land in the right spreadsheet when the 9:30 AM job fires the next morning.
+
 ## Troubleshooting Reminder
 If something looks like it should be working but isn't — check Render first. Make sure the latest changes have actually been deployed: confirm that Render is running the correct branch and that the most recent commit is live. Many "mystery" bugs turn out to be Render still running an older version of the code.
 
 ## Last Updated
-2026-03-27
+2026-04-04
