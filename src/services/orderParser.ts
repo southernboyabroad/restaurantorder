@@ -171,6 +171,10 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   cleaned = cleaned.replace(/(\d+)-\s+/g, '$1-');
   // "(5) 4 inch" → "5 4 inch" — strip parentheses around quantities
   cleaned = cleaned.replace(/\((\d+)\)/g, '$1');
+  // "4"" or "4″" → "4-inch" — normalize inch symbols (straight, curly, double-prime)
+  cleaned = cleaned.replace(/(\d+)["\u201C\u201D\u2033]/g, '$1-inch');
+  // "1. toast" → "1 toast" — numbered list prefix: treat list number as quantity
+  cleaned = cleaned.replace(/(\d+)\.\s+(?=[a-zA-Z])/g, '$1 ');
   const normalized = wordsToDigits(cleaned);
 
   // Build a list of (name-to-match, canonical-product) pairs.
