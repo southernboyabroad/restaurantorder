@@ -210,9 +210,9 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   for (const { label, product } of namePairs) {
     const escaped = escapeRegex(label);
     const patterns = [
-      new RegExp(`(\\d+)\\s+${escaped}\\b`, 'gi'),           // "10 toast"
-      new RegExp(`(\\d+)\\s*[-:=]\\s*${escaped}\\b`, 'gi'), // "5 - toast", "5: toast"
-      new RegExp(`${escaped}\\s*[-:=]?\\s*(\\d+)`, 'gi'),   // "toast 10", "toast: 10", "toast -10"
+      new RegExp(`(\\d+)[ \\t]+${escaped}\\b`, 'gi'),           // "10 toast"
+      new RegExp(`(\\d+)[ \\t]*[-:=][ \\t]*${escaped}\\b`, 'gi'), // "5 - toast", "5: toast"
+      new RegExp(`${escaped}[ \\t]*[-:=]?[ \\t]*(\\d+)`, 'gi'),   // "toast 10", "toast: 10", "toast -10"
     ];
     for (const pattern of patterns) {
       let m: RegExpExecArray | null;
@@ -232,8 +232,8 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   for (const { label, product } of namePairs) {
     const escaped = escapeRegex(label);
     const patterns = [
-      new RegExp(`(\\d+),\\s*${escaped}\\b`, 'gi'),        // "6, 4-inch"
-      new RegExp(`${escaped},\\s*(\\d+)`, 'gi'),            // "toast, 10"
+      new RegExp(`(\\d+),[ \\t]*${escaped}\\b`, 'gi'),        // "6, 4-inch"
+      new RegExp(`${escaped},[ \\t]*(\\d+)`, 'gi'),            // "toast, 10"
     ];
     for (const pattern of patterns) {
       let m: RegExpExecArray | null;
