@@ -368,6 +368,8 @@ export function isCalledInReply(text: string): boolean {
 
 const DECLINE_PATTERNS = [
   /\b(no|not|don'?t|dont)\s+(need|want|order|ordering)\b/i,
+  /\bno\s+bread\b/i,           // "no bread", "no bread ty", "no bread this week"
+  /\bno\s+order\b/i,           // "no order today"
   /\bnothing\s*(today|this\s*(week|time)|right\s*now|for\s*(us|me|today|now))?\b/i,
   /\bwe'?re\s+(good|fine|ok|okay|all\s*(good|set))\b/i,
   /\bi'?m\s+(good|fine|ok|okay|all\s*(good|set))\b/i,
