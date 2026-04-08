@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import { config } from '../config';
 import { validateTwilioWebhook, buildOrderPromptMessage, buildConfirmationMessage } from './sms';
-import { findCustomerByPhone, findCustomerByNameHint, normalizePhone, appendOrder, markOrdersAsEmailed, getLastOrderForCustomer, getTodaysOrders, updateTodaysOrder, getOtherContactsForCustomer, Customer } from './sheets';
+import { findCustomerByPhone, findCustomerByNameHint, normalizePhone, appendOrder, markOrdersAsEmailed, hasBatchBeenSent, getLastOrderForCustomer, getTodaysOrders, updateTodaysOrder, getOtherContactsForCustomer, Customer } from './sheets';
 import { parseOrder, parseOrderStrict, isAffirmativeReply, isRepeatOrderRequest, isDeclineReply, isCalledInReply, parseCorrectionRequest, preprocessCorrectionText, isReactionMessage, parseAdminOrderRequest } from './orderParser';
 import { sendSms, forwardToAdmin } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
@@ -28,6 +28,15 @@ function getEffectiveProductMap(customer: Customer): Record<string, string> {
   );
   const override = overrideKey ? CUSTOMER_PRODUCT_OVERRIDES[overrideKey] : {};
   return { ...sheetMap, ...override };
+}
+
+// ── Late-order email window: 11:30 AM – 12:30 PM ────────────────
+// Orders that arrive after the 11:30 batch email get their own
+// individual email sent immediately. Hard cutoff at 12:30 PM.
+function isLateOrderEmailWindow(): boolean {
+  const now = new Date();
+  const total = now.getHours() * 60 + now.getMinutes();
+  return total >= 690 && total < 750; // 11:30 = 690 min, 12:30 = 750 min
 }
 
 // Short delay so replies feel personal rather than instant/automated
@@ -577,8 +586,31 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       // Non-fatal — the flat Orders sheet already has the order
     }
 
-    // Warehouse email is sent by the 11:30 AM scheduler (afternoonJob),
-    // not on each individual SMS. The /trigger-email endpoint can be used
+    // Late-order email: if this order arrives after the 11:30 batch email
+    // has already gone out (but before the 12:30 hard cutoff), send an
+    // individual email to the warehouse right now.
+    if (isLateOrderEmailWindow()) {
+      try {
+        const batchSent = await hasBatchBeenSent(orderDateStr);
+        if (batchSent) {
+          const lateDelivery = getDeliveryDate(new Date(`${orderDateStr}T12:00:00`));
+          const lateDeliveryDateStr = formatDeliveryDate(lateDelivery);
+          const lateDayName = deliveryDayName(lateDelivery);
+          const routeLabel = customer.route || 'Unassigned';
+          const subject = `ADDITIONS to Route ${routeLabel}- ${lateDeliveryDateStr}`;
+          const textBody = formatOrderText(parsed.quantities, lateDayName);
+          const htmlBody = formatOrderHtml(parsed.quantities, lateDayName);
+          await sendWarehouseEmail(subject, textBody, htmlBody);
+          await markOrdersAsEmailed(orderDateStr);
+          logger.info(`Late order email sent for ${customer.name} on route ${routeLabel}`);
+        }
+      } catch (lateEmailErr) {
+        logger.error('Failed to send late order email', { error: lateEmailErr, customer: customer.name });
+      }
+    }
+
+    // Outside the late window: warehouse email is sent by the 11:30 AM
+    // scheduler (afternoonJob). The /trigger-email endpoint can be used
     // to manually send any un-emailed orders if needed.
 
     // Build a confirmation
