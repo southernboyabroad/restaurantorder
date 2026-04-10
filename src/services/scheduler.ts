@@ -196,9 +196,15 @@ async function afternoonJob(): Promise<void> {
       return;
     }
 
-    // Aggregate unsent orders by route and send one totaled email per route
+    // Aggregate unsent orders by route and send one totaled email per route.
+    // Skip routes where every product total is zero (e.g. all-decline orders).
     const routeSummaries = groupOrdersByRoute(dateStr, unsent);
     for (const summary of routeSummaries) {
+      const hasItems = Object.values(summary.totalsByProduct).some((qty) => qty > 0);
+      if (!hasItems) {
+        logger.info(`Skipping email for route ${summary.route || 'Unassigned'} — no items to report`);
+        continue;
+      }
       const routeLabel = summary.route || 'Unassigned';
       const subject = `ADDITIONS to Route ${routeLabel}- ${deliveryDateStr}`;
       const textBody = formatSummaryText(summary, dayName);
