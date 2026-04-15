@@ -35,9 +35,14 @@ export const config = {
   },
 
   sendgrid: {
-    apiKey: required('SENDGRID_API_KEY'),
-    fromEmail: required('SENDGRID_FROM_EMAIL'),
+    apiKey: optional('SENDGRID_API_KEY', ''),
+    fromEmail: optional('SENDGRID_FROM_EMAIL', ''),
     warehouseEmail: required('WAREHOUSE_EMAIL'),
+  },
+
+  resend: {
+    apiKey: required('RESEND_API_KEY'),
+    fromEmail: required('RESEND_FROM_EMAIL'),
   },
 
   openai: {
