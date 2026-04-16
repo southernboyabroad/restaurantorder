@@ -668,7 +668,8 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
 
 // ── Manual trigger: re-send any un-emailed orders ───────────────
 // GET /trigger-email  (optionally pass ?date=2026-02-15)
-// Sends individual emails for orders not yet emailed (safety net).
+// Aggregates unsent orders by route and sends one email per route,
+// same as the 11:30 AM scheduler job.
 webhookRouter.get('/trigger-email', async (req: Request, res: Response) => {
   try {
     const dateStr = (req.query.date as string) || new Date().toISOString().slice(0, 10);
@@ -677,6 +678,7 @@ webhookRouter.get('/trigger-email', async (req: Request, res: Response) => {
     const dayName = deliveryDayName(delivery);
 
     const { getTodaysOrders } = await import('./sheets');
+    const { groupOrdersByRoute, formatSummaryText, formatSummaryHtml } = await import('./orderSummary');
     const orders = await getTodaysOrders(dateStr);
     const unsent = orders.filter((o) => !o.emailed);
 
@@ -685,17 +687,20 @@ webhookRouter.get('/trigger-email', async (req: Request, res: Response) => {
       return;
     }
 
-    // Send one email per individual order — never cumulate
-    let emailCount = 0;
-    for (const order of unsent) {
-      const routeLabel = order.route || 'Unassigned';
-      const subject = `ADDITIONS to Route ${routeLabel}- ${deliveryDateStr}`;
-      const textBody = formatOrderText(order.quantities, dayName);
-      const htmlBody = formatOrderHtml(order.quantities, dayName);
+    // Aggregate by route — one email per route, same as the 11:30 scheduler
+    const routeSummaries = groupOrdersByRoute(dateStr, unsent);
 
+    let emailCount = 0;
+    for (const summary of routeSummaries) {
+      const hasItems = Object.values(summary.totalsByProduct).some((qty) => qty > 0);
+      if (!hasItems) continue;
+      const routeLabel = summary.route || 'Unassigned';
+      const subject = `ADDITIONS to Route ${routeLabel}- ${deliveryDateStr}`;
+      const textBody = formatSummaryText(summary, dayName);
+      const htmlBody = formatSummaryHtml(summary, dayName);
       await sendWarehouseEmail(subject, textBody, htmlBody);
       emailCount++;
-      logger.info(`Manual trigger: email sent for ${order.name} on route ${routeLabel}`);
+      logger.info(`Manual trigger: aggregated email sent for route ${routeLabel} (${summary.orderCount} orders)`);
     }
 
     await markOrdersAsEmailed(dateStr);
