@@ -711,7 +711,7 @@ webhookRouter.get('/trigger-email', async (req: Request, res: Response) => {
       message: 'Failed to send email',
       detail,
       debug: {
-        fromEmail: config.sendgrid.fromEmail,
+        fromEmail: config.resend?.fromEmail,
         warehouseEmail: config.sendgrid.warehouseEmail,
       },
     });
