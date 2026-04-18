@@ -19,6 +19,8 @@ const CUSTOMER_PRODUCT_OVERRIDES: Record<string, Record<string, string>> = {
   'dunks': { '4-inch': 'institutional_sandwich' },
   // Boatwright: "buns" always means institutional_sandwich, not 4-inch
   'boatwright': { '4-inch': 'institutional_sandwich' },
+  // Tilly's: hot dogs always map to top_slice
+  'tilly': { 'long': 'top_slice' },
 };
 
 function getEffectiveProductMap(customer: Customer): Record<string, string> {
