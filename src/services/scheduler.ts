@@ -215,6 +215,14 @@ async function afternoonJob(): Promise<void> {
 
     await markOrdersAsEmailed(dateStr);
 
+    // Re-sync all today's orders to route-specific Restaurant_Data sheets so
+    // any manual edits made in the Orders tab after the morning sync are reflected.
+    try {
+      await syncOrdersToRestaurantDataSheets(dateStr);
+    } catch (syncErr) {
+      logger.error('Failed to sync orders to Restaurant_Data sheets at 11:30', { error: syncErr });
+    }
+
     logger.info('=== AFTERNOON JOB COMPLETE ===');
   } catch (err) {
     logger.error('Afternoon job failed', { error: err });
