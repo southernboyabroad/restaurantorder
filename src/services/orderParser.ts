@@ -52,6 +52,8 @@ const PRODUCT_ALIASES: Record<string, string> = {
   'sandwiches': 'institutional_sandwich',
   'sand roll': 'institutional_sandwich',
   'sand rolls': 'institutional_sandwich',
+  'sandwich roll': 'institutional_sandwich',
+  'sandwich rolls': 'institutional_sandwich',
   'three-inch bun': 'institutional_sandwich',
   'dinner_rolls': 'dinner_rolls',
   'dinner rolls': 'dinner_rolls',
@@ -375,7 +377,7 @@ const DECLINE_PATTERNS = [
   /\bno\s+bread\b/i,           // "no bread", "no bread ty", "no bread this week"
   /\bno\s+order\b/i,           // "no order today"
   /\bnothing\s*(today|this\s*(week|time)|right\s*now|for\s*(us|me|today|now))?\b/i,
-  /\bwe'?re\s+(good|fine|ok|okay|all\s*(good|set))\b/i,
+  /\bwe('?re|\s+are)\s+(good|fine|ok|okay|all\s*(good|set))\b/i,
   /\bi'?m\s+(good|fine|ok|okay|all\s*(good|set))\b/i,
   /\ball\s*(good|set)\b/i,
   /\bskip\s*(this)?\s*(week|time|today|order|us)?\b/i,
