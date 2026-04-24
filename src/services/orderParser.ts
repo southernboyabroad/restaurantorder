@@ -378,6 +378,7 @@ const DECLINE_PATTERNS = [
   /\bno\s+order\b/i,           // "no order today"
   /\bnothing\s*(today|this\s*(week|time)|right\s*now|for\s*(us|me|today|now))?\b/i,
   /\bwe('?re|\s+are)\s+(good|fine|ok|okay|all\s*(good|set))\b/i,
+  /\bwe\s+are\s+good\b/i,        // simpler backup for "we are good, thanks"
   /\bi'?m\s+(good|fine|ok|okay|all\s*(good|set))\b/i,
   /\ball\s*(good|set)\b/i,
   /\bskip\s*(this)?\s*(week|time|today|order|us)?\b/i,
@@ -544,7 +545,7 @@ Important synonyms — always map these to the canonical product name:
 - "texas toast", "texas" → toast
 - "four-inch hamburger bun", "four-inch bun", "bun", "four-inch" → 4-inch
 - "hot dog" → long
-- "sandwich", "sand rolls", "three-inch bun" → institutional_sandwich
+- "sandwich", "sandwich roll", "sandwich rolls", "sand roll", "sand rolls", "three-inch bun" → institutional_sandwich
 - "dinner", "dinner rolls" → dinner_rolls
 - "hoagies", "sub", "subs", "sub roll", "sub rolls", "sausage roll", "sausage rolls" → hoagie
 - "top slice", "top slices" → top_slice

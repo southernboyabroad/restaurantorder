@@ -773,6 +773,38 @@ webhookRouter.get('/trigger-morning-text', async (req: Request, res: Response) =
   }
 });
 
+// Send order-prompt SMS to a single customer by name (partial match)
+// Usage: /send-sms?customer=tillys   or   /send-sms?customer=dads+bar
+webhookRouter.get('/send-sms', async (req: Request, res: Response) => {
+  try {
+    const hint = (req.query.customer as string || '').trim();
+    if (!hint) {
+      res.status(400).json({ status: 'error', message: 'Missing ?customer= parameter' });
+      return;
+    }
+
+    const result = await findCustomerByNameHint(hint);
+    if (!result) {
+      res.status(404).json({ status: 'error', message: `No customer found matching "${hint}"` });
+      return;
+    }
+
+    const { customer } = result;
+    const dow = new Date().getDay();
+    const message = buildOrderPromptMessage(customer.route, dow)
+      ?? 'Good morning — what can I get you for tomorrow?';
+
+    await sendSms(customer.phone, message);
+    await forwardToAdmin('out', customer.name, message, customer.phone);
+    logger.info('Manual single-customer SMS sent', { to: customer.phone, name: customer.name });
+
+    res.json({ status: 'sent', customer: customer.name, phone: customer.phone, message });
+  } catch (err: any) {
+    logger.error('Manual single-customer SMS failed', { error: err });
+    res.status(500).json({ status: 'error', message: err?.message || 'Unknown error' });
+  }
+});
+
 // Health check
 webhookRouter.get('/health', (_req: Request, res: Response) => {
   res.json({
