@@ -16,7 +16,7 @@ import logger from '../logger';
 // Dunks only ever orders institutional_sandwich and toast, so "buns"
 // (which the parser maps to 4-inch) should resolve to institutional_sandwich.
 const CUSTOMER_PRODUCT_OVERRIDES: Record<string, Record<string, string>> = {
-  'dunks': { '4-inch': 'institutional_sandwich' },
+  'duncs': { '4-inch': 'institutional_sandwich' },
   // Boatwright: "buns" always means institutional_sandwich, not 4-inch
   'boatwright': { '4-inch': 'institutional_sandwich' },
   // Tilly's: hot dogs always map to top_slice
