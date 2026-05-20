@@ -39,6 +39,8 @@ const PRODUCT_ALIASES: Record<string, string> = {
   'four inch bun': '4-inch',
   'bun': '4-inch',
   'buns': '4-inch',
+  'burger': '4-inch',
+  'burgers': '4-inch',
   'long': 'long',
   'long roll': 'long',
   'long rolls': 'long',
@@ -175,6 +177,8 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   cleaned = cleaned.replace(/\((\d+)\)/g, '$1');
   // "4"" or "4″" → "4-inch" — normalize inch symbols (straight, curly, double-prime)
   cleaned = cleaned.replace(/(\d+)["\u201C\u201D\u2033]/g, '$1-inch');
+  // "4buns" → "4 buns" — digit immediately adjacent to a letter (no space, no hyphen)
+  cleaned = cleaned.replace(/(\d)([a-z])/g, '$1 $2');
   // "1. toast" or "1, toast" → "1 toast" — numbered list prefix: treat list number as quantity
   cleaned = cleaned.replace(/(\d+)[.,]\s+(?=[a-zA-Z])/g, '$1 ');
   const normalized = wordsToDigits(cleaned);
@@ -543,7 +547,7 @@ export async function parseOrderWithAI(text: string): Promise<ParsedOrder> {
 Extract quantities for each product. Available products: ${config.products.join(', ')}.
 Important synonyms — always map these to the canonical product name:
 - "texas toast", "texas" → toast
-- "four-inch hamburger bun", "four-inch bun", "bun", "four-inch" → 4-inch
+- "four-inch hamburger bun", "four-inch bun", "bun", "buns", "burger", "burgers", "four-inch" → 4-inch
 - "hot dog" → long
 - "sandwich", "sandwich roll", "sandwich rolls", "sand roll", "sand rolls", "three-inch bun" → institutional_sandwich
 - "dinner", "dinner rolls" → dinner_rolls
