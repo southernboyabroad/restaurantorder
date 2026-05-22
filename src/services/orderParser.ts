@@ -6,6 +6,7 @@ export interface ParsedOrder {
   quantities: Record<string, number>;
   confident: boolean;
   declined?: boolean; // true when AI detects the customer is declining/skipping their order
+  _hasOrphanedNumbers?: boolean; // internal: regex left digit tokens unpaired — AI should supplement
 }
 
 // ── Product aliases ─────────────────────────────────────────────
@@ -294,7 +295,16 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
 
   if (matchCount === 0) return null;
 
-  return { quantities, confident: true };
+  // Detect orphaned number tokens — digits in the normalized text not covered by
+  // any matched region.  If any exist, the regex may have missed a product and
+  // the AI should be run as a supplemental pass.
+  const digitTokens = [...normalized.matchAll(/\b\d+\b/g)];
+  const _hasOrphanedNumbers = digitTokens.some(({ index = 0, 0: m }) => {
+    const end = index + m.length;
+    return !matchedRegions.some((r) => index >= r.start && end <= r.end);
+  });
+
+  return { quantities, confident: true, _hasOrphanedNumbers };
 }
 
 // ── Repeat-order detection ──────────────────────────────────────
@@ -600,10 +610,25 @@ export async function parseOrder(text: string, defaultProduct?: string, productO
   const strict = parseOrderStrict(text, defaultProduct, productOrder);
   if (strict) {
     logger.info('Order parsed with strict parser', { result: strict });
+
+    // If digit tokens were left unpaired, the regex may have missed a product.
+    // Run AI as a supplement and merge in anything it finds that the regex didn't.
+    if (strict._hasOrphanedNumbers) {
+      logger.info('Orphaned numbers detected — running AI as supplement', { input: text });
+      const aiResult = await parseOrderWithAI(text);
+      for (const [product, qty] of Object.entries(aiResult.quantities)) {
+        if (!(product in strict.quantities) && qty > 0) {
+          strict.quantities[product] = qty;
+          logger.info('AI supplement added missed product', { product, qty });
+        }
+      }
+    }
+
+    delete strict._hasOrphanedNumbers;
     return strict;
   }
 
-  // Fall back to AI
+  // Fall back to AI entirely
   logger.info('Strict parser found no matches — falling back to AI', { input: text });
   return parseOrderWithAI(text);
 }
