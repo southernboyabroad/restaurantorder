@@ -41,6 +41,9 @@ const PRODUCT_ALIASES: Record<string, string> = {
   'buns': '4-inch',
   'burger': '4-inch',
   'burgers': '4-inch',
+  'hamburger': '4-inch',
+  'hamburger bun': '4-inch',
+  'hamburger buns': '4-inch',
   'long': 'long',
   'long roll': 'long',
   'long rolls': 'long',
@@ -547,7 +550,7 @@ export async function parseOrderWithAI(text: string): Promise<ParsedOrder> {
 Extract quantities for each product. Available products: ${config.products.join(', ')}.
 Important synonyms — always map these to the canonical product name:
 - "texas toast", "texas" → toast
-- "four-inch hamburger bun", "four-inch bun", "bun", "buns", "burger", "burgers", "four-inch" → 4-inch
+- "four-inch hamburger bun", "four-inch bun", "bun", "buns", "burger", "burgers", "hamburger", "hamburger bun", "hamburger buns", "four-inch" → 4-inch
 - "hot dog" → long
 - "sandwich", "sandwich roll", "sandwich rolls", "sand roll", "sand rolls", "three-inch bun" → institutional_sandwich
 - "dinner", "dinner rolls" → dinner_rolls
