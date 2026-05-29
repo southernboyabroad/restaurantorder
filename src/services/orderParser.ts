@@ -52,6 +52,14 @@ const PRODUCT_ALIASES: Record<string, string> = {
   'hot dogs': 'long',
   'hotdog': 'long',
   'hotdogs': 'long',
+  'top split hotdog': 'long',
+  'top split hotdogs': 'long',
+  'top split hot dog': 'long',
+  'top split hot dogs': 'long',
+  'top split roll': 'long',
+  'top split rolls': 'long',
+  'top split bun': 'long',
+  'top split buns': 'long',
   'institutional_sandwich': 'institutional_sandwich',
   'institutional sandwich': 'institutional_sandwich',
   'sandwich': 'institutional_sandwich',
@@ -561,7 +569,7 @@ Extract quantities for each product. Available products: ${config.products.join(
 Important synonyms — always map these to the canonical product name:
 - "texas toast", "texas" → toast
 - "four-inch hamburger bun", "four-inch bun", "bun", "buns", "burger", "burgers", "hamburger", "hamburger bun", "hamburger buns", "four-inch" → 4-inch
-- "hot dog" → long
+- "hot dog", "top split hotdog", "top split hot dog", "top split roll" → long
 - "sandwich", "sandwich roll", "sandwich rolls", "sand roll", "sand rolls", "three-inch bun" → institutional_sandwich
 - "dinner", "dinner rolls" → dinner_rolls
 - "hoagies", "sub", "subs", "sub roll", "sub rolls", "sausage roll", "sausage rolls" → hoagie
