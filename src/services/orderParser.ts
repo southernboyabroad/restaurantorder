@@ -186,6 +186,8 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   cleaned = cleaned.replace(/\btrays?\s+(of\s+)?/gi, '');
   // "4- inch" or "4- in" → "4-inch" / "4-in" (space after hyphen in product names)
   cleaned = cleaned.replace(/(\d+)-\s+/g, '$1-');
+  // "4 - inch" or "4 - in" → "4-inch" / "4-in" (spaces around hyphen in product names)
+  cleaned = cleaned.replace(/(\d+)\s+-\s*(inch|in)\b/g, '$1-$2');
   // "(5) 4 inch" → "5 4 inch" — strip parentheses around quantities
   cleaned = cleaned.replace(/\((\d+)\)/g, '$1');
   // "4"" or "4″" → "4-inch" — normalize inch symbols (straight, curly, double-prime)
