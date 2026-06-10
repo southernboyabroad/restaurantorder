@@ -60,6 +60,7 @@ const PRODUCT_ALIASES: Record<string, string> = {
   'top split rolls': 'long',
   'top split bun': 'long',
   'top split buns': 'long',
+  'top split': 'long',
   'institutional_sandwich': 'institutional_sandwich',
   'institutional sandwich': 'institutional_sandwich',
   'sandwich': 'institutional_sandwich',
