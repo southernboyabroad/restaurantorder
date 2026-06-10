@@ -15,6 +15,13 @@ System is live and in production.
 - Added marty, plain_marty, and 5-inch to DELIVERY_PRODUCT_ORDER, PRODUCT_HEADERS, and PRODUCT_ABBREVS in deliveryTab.ts so new DLVR tabs include those columns automatically.
 - Added CUSTOMER_PRODUCT_OVERRIDES in webhook.ts for hardcoded per-customer product remaps. Dunks's orders: "buns" parses to 4-inch globally, then the override remaps 4-inch → institutional_sandwich for Dunks (who only orders institutional_sandwich and toast). All other customers unaffected. To add similar overrides for other customers, add an entry to CUSTOMER_PRODUCT_OVERRIDES keyed by a lowercase substring of their name.
 
+## Recent Changes (continued)
+- Added "burger", "burgers", "hamburger", "hamburger bun", "hamburger buns" as aliases for 4-inch.
+- Added "top split hotdog/hotdogs/hot dog/hot dogs/roll/rolls/bun/buns" and bare "top split" as aliases for long (which then hits customer overrides like Deano's long → top_slice).
+- AI now runs as a supplement when the regex parser leaves orphaned number tokens (digits not paired with a product). Regex results take priority; AI only fills in missed products. This prevents partial parses from silently dropping products.
+- Manually entered orders in the Orders spreadsheet: leave the emailed column BLANK when entering by hand. If it has a Y, the 11:30 job will skip it. Use /trigger-email to send missed orders.
+- Render URL: https://restaurantorder-msop.onrender.com
+
 ## Known Issues / In Progress
 - None currently noted
 
@@ -25,4 +32,4 @@ System is live and in production.
 If something looks like it should be working but isn't — check Render first. Make sure the latest changes have actually been deployed: confirm that Render is running the correct branch and that the most recent commit is live. Many "mystery" bugs turn out to be Render still running an older version of the code.
 
 ## Last Updated
-2026-04-04
+2026-06-10
