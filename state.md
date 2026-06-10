@@ -17,6 +17,8 @@ System is live and in production.
 
 ## Recent Changes (continued)
 - Added "burger", "burgers", "hamburger", "hamburger bun", "hamburger buns" as aliases for 4-inch.
+- Added bare "top split" as alias for long (in addition to the existing "top split hotdog/roll/bun" variants).
+- Added normalization for "4 - inch" (spaces around hyphen) → "4-inch" so customers who type it that way get parsed correctly.
 - Added "top split hotdog/hotdogs/hot dog/hot dogs/roll/rolls/bun/buns" and bare "top split" as aliases for long (which then hits customer overrides like Deano's long → top_slice).
 - AI now runs as a supplement when the regex parser leaves orphaned number tokens (digits not paired with a product). Regex results take priority; AI only fills in missed products. This prevents partial parses from silently dropping products.
 - Manually entered orders in the Orders spreadsheet: leave the emailed column BLANK when entering by hand. If it has a Y, the 11:30 job will skip it. Use /trigger-email to send missed orders.
