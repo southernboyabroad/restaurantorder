@@ -311,6 +311,43 @@ async function updateRestaurantDataRow(
   logger.info(`Restaurant_Data row ${rowNumber} updated for "${customerName}" on sheet ${sheetId}`);
 }
 
+// Two alternating row colors for the Orders sheet (soft blue / soft green)
+const ORDER_ROW_COLORS = [
+  { red: 0.80, green: 0.90, blue: 1.00 }, // light blue
+  { red: 0.82, green: 0.96, blue: 0.82 }, // light green
+];
+
+async function getOrdersSheetNumericId(sheets: sheets_v4.Sheets): Promise<number | null> {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: config.google.sheetId });
+  const sheet = (meta.data.sheets || []).find((s) => s.properties?.title === 'Orders');
+  return sheet?.properties?.sheetId ?? null;
+}
+
+async function applyOrderRowColor(
+  sheets: sheets_v4.Sheets,
+  numericSheetId: number,
+  rowIndex: number, // 0-based
+  colorIndex: number,
+): Promise<void> {
+  const color = ORDER_ROW_COLORS[colorIndex];
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: config.google.sheetId,
+    requestBody: {
+      requests: [{
+        repeatCell: {
+          range: {
+            sheetId: numericSheetId,
+            startRowIndex: rowIndex,
+            endRowIndex: rowIndex + 1,
+          },
+          cell: { userEnteredFormat: { backgroundColor: color } },
+          fields: 'userEnteredFormat.backgroundColor',
+        },
+      }],
+    },
+  });
+}
+
 export async function appendOrder(order: OrderRow): Promise<void> {
   const sheets = getClient();
   const row = [
@@ -328,6 +365,40 @@ export async function appendOrder(order: OrderRow): Promise<void> {
     valueInputOption: 'RAW',
     requestBody: { values: [row] },
   });
+
+  // Apply alternating row color based on date — same date = same color, new date = alternate
+  try {
+    const numericSheetId = await getOrdersSheetNumericId(sheets);
+    if (numericSheetId !== null) {
+      // Read existing rows to find last date and its color index
+      const existing = await sheets.spreadsheets.values.get({
+        spreadsheetId: config.google.sheetId,
+        range: 'Orders!A2:A',
+      });
+      const rows = existing.data.values || [];
+      // The row we just appended is at index rows.length (0-based, row 1 = header)
+      const newRowIndex = rows.length; // after append, rows includes the new row
+      let colorIndex = 0;
+      if (rows.length >= 2) {
+        // Find the last row before the new one with a different date
+        const prevRows = rows.slice(0, rows.length - 1);
+        const lastDate = prevRows.findLast((r: string[]) => r[0] && r[0] !== order.date)?.[0];
+        if (lastDate) {
+          // Count distinct dates to determine parity
+          const dates = [...new Set(prevRows.map((r: string[]) => r[0]).filter(Boolean))];
+          colorIndex = dates.length % 2;
+        } else {
+          // All existing rows are same date as new order — find what color they use
+          // by counting distinct dates including current
+          const dates = [...new Set(rows.map((r: string[]) => r[0]).filter(Boolean))];
+          colorIndex = (dates.length - 1) % 2;
+        }
+      }
+      await applyOrderRowColor(sheets, numericSheetId, newRowIndex, colorIndex);
+    }
+  } catch (colorErr) {
+    logger.warn('Failed to apply row color to Orders sheet', { error: colorErr });
+  }
 
   // If this route has a dedicated Restaurant_Data sheet, find the matching
   // row by name and update quantities in place (never append).
