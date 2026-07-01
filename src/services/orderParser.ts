@@ -17,6 +17,8 @@ const PRODUCT_ALIASES: Record<string, string> = {
   'texas toast': 'toast',
   'texas': 'toast',
   '4-inch': '4-inch',
+  '4 - inch': '4-inch',
+  '4 - in': '4-inch',
   '4-in': '4-inch',
   '4 in': '4-inch',
   '4 inch': '4-inch',
