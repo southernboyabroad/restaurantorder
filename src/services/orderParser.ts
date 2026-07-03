@@ -194,6 +194,8 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   cleaned = cleaned.replace(/\((\d+)\)/g, '$1');
   // "4"" or "4″" → "4-inch" — normalize inch symbols (straight, curly, double-prime)
   cleaned = cleaned.replace(/(\d+)["\u201C\u201D\u2033]/g, '$1-inch');
+  // "4-inch- 2" → "4-inch 2" — letter-hyphen-space before a digit (stray separator)
+  cleaned = cleaned.replace(/([a-z])-\s+(\d)/g, '$1 $2');
   // "4buns" → "4 buns" — digit immediately adjacent to a letter (no space, no hyphen)
   cleaned = cleaned.replace(/(\d)([a-z])/g, '$1 $2');
   // "1. toast" or "1, toast" → "1 toast" — numbered list prefix: treat list number as quantity
