@@ -471,10 +471,12 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     }
 
     const hasItems = Object.values(parsed.quantities).some((qty) => qty > 0);
+    // Customer explicitly texted all-zero quantities (e.g. "0 hotdogs, 0 4-inch") — treat as a decline
+    const allZeroExplicit = !hasItems && Object.keys(parsed.quantities).length > 0;
 
     if (!hasItems) {
       // Check if this is an affirmative reply like "Yes", "Okay", "Sure"
-      if (isAffirmativeReply(body)) {
+      if (isAffirmativeReply(body) && !allZeroExplicit) {
         logger.info('Affirmative reply detected — asking for quantities', { from, body });
         let followUp: string;
         if (customer.productOrder && customer.productOrder.length > 0) {
@@ -494,8 +496,8 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       }
 
       // Check if the customer is declining / skipping their order
-      // (either via keyword patterns or AI-detected intent)
-      if (isDeclineReply(body) || parsed.declined) {
+      // (either via keyword patterns, AI-detected intent, or all-zero explicit quantities)
+      if (isDeclineReply(body) || parsed.declined || allZeroExplicit) {
         logger.info('Decline reply detected — recording zero order', { from, body, name: customer.name });
 
         // Record a zero-quantity order so the 10:30 reminder is suppressed
