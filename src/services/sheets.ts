@@ -311,6 +311,7 @@ async function updateRestaurantDataRow(
   logger.info(`Restaurant_Data row ${rowNumber} updated for "${customerName}" on sheet ${sheetId}`);
 }
 
+
 // Two alternating row colors for the Orders sheet (soft blue / soft green)
 const ORDER_ROW_COLORS = [
   { red: 0.80, green: 0.90, blue: 1.00 }, // light blue
@@ -326,7 +327,7 @@ async function getOrdersSheetNumericId(sheets: sheets_v4.Sheets): Promise<number
 async function applyOrderRowColor(
   sheets: sheets_v4.Sheets,
   numericSheetId: number,
-  rowIndex: number, // 0-based
+  rowIndex: number,
   colorIndex: number,
 ): Promise<void> {
   const color = ORDER_ROW_COLORS[colorIndex];
@@ -366,34 +367,22 @@ export async function appendOrder(order: OrderRow): Promise<void> {
     requestBody: { values: [row] },
   });
 
-  // Apply alternating row color based on date — same date = same color, new date = alternate
+  // Apply alternating row color — all rows for the same date get the same color,
+  // switching to the other color each new date.
   try {
     const numericSheetId = await getOrdersSheetNumericId(sheets);
     if (numericSheetId !== null) {
-      // Read existing rows to find last date and its color index
       const existing = await sheets.spreadsheets.values.get({
         spreadsheetId: config.google.sheetId,
         range: 'Orders!A2:A',
       });
       const rows = existing.data.values || [];
-      // The row we just appended is at index rows.length (0-based, row 1 = header)
-      const newRowIndex = rows.length; // after append, rows includes the new row
-      let colorIndex = 0;
-      if (rows.length >= 2) {
-        // Find the last row before the new one with a different date
-        const prevRows = rows.slice(0, rows.length - 1);
-        const lastDate = prevRows.findLast((r: string[]) => r[0] && r[0] !== order.date)?.[0];
-        if (lastDate) {
-          // Count distinct dates to determine parity
-          const dates = [...new Set(prevRows.map((r: string[]) => r[0]).filter(Boolean))];
-          colorIndex = dates.length % 2;
-        } else {
-          // All existing rows are same date as new order — find what color they use
-          // by counting distinct dates including current
-          const dates = [...new Set(rows.map((r: string[]) => r[0]).filter(Boolean))];
-          colorIndex = (dates.length - 1) % 2;
-        }
-      }
+      // Count distinct dates that appeared BEFORE today's date — that determines parity.
+      const priorDates = new Set(
+        rows.map((r: string[]) => r[0]).filter((d: string) => d && d !== order.date)
+      );
+      const colorIndex = priorDates.size % 2;
+      const newRowIndex = rows.length; // 0-based; row 1 is header, rows[] starts at row 2
       await applyOrderRowColor(sheets, numericSheetId, newRowIndex, colorIndex);
     }
   } catch (colorErr) {
