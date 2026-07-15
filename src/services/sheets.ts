@@ -324,17 +324,17 @@ async function getOrdersSheetNumericId(sheets: sheets_v4.Sheets): Promise<number
   return sheet?.properties?.sheetId ?? null;
 }
 
-async function applyOrderRowColor(
+async function applyOrderRowColors(
   sheets: sheets_v4.Sheets,
   numericSheetId: number,
-  rowIndex: number,
+  rowIndices: number[],
   colorIndex: number,
 ): Promise<void> {
   const color = ORDER_ROW_COLORS[colorIndex];
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId: config.google.sheetId,
     requestBody: {
-      requests: [{
+      requests: rowIndices.map((rowIndex) => ({
         repeatCell: {
           range: {
             sheetId: numericSheetId,
@@ -344,7 +344,7 @@ async function applyOrderRowColor(
           cell: { userEnteredFormat: { backgroundColor: color } },
           fields: 'userEnteredFormat.backgroundColor',
         },
-      }],
+      })),
     },
   });
 }
@@ -369,6 +369,7 @@ export async function appendOrder(order: OrderRow): Promise<void> {
 
   // Apply alternating row color — all rows for the same date get the same color,
   // switching to the other color each new date.
+  // Also backfills any manually pre-entered rows for today that are still white.
   try {
     const numericSheetId = await getOrdersSheetNumericId(sheets);
     if (numericSheetId !== null) {
@@ -382,8 +383,14 @@ export async function appendOrder(order: OrderRow): Promise<void> {
         rows.map((r: string[]) => r[0]).filter((d: string) => d && d !== order.date)
       );
       const colorIndex = priorDates.size % 2;
-      const newRowIndex = rows.length; // 0-based; row 1 is header, rows[] starts at row 2
-      await applyOrderRowColor(sheets, numericSheetId, newRowIndex, colorIndex);
+      // Color all rows for today's date (including any manually pre-entered ones).
+      // rows[] covers A2:A, so row i in the array is sheet row index i+1 (0-based).
+      const todayIndices = rows
+        .map((r: string[], i: number) => (r[0] === order.date ? i + 1 : -1))
+        .filter((i: number) => i !== -1);
+      if (todayIndices.length > 0) {
+        await applyOrderRowColors(sheets, numericSheetId, todayIndices, colorIndex);
+      }
     }
   } catch (colorErr) {
     logger.warn('Failed to apply row color to Orders sheet', { error: colorErr });
