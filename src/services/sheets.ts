@@ -69,6 +69,52 @@ const ABBREV_TO_PRODUCT: Record<string, string> = {
   'sliced bread': 'potato_bread',
 };
 
+// ── Message Log ─────────────────────────────────────────────────
+// Appends one row to the "Message Log" tab in the main spreadsheet.
+// Columns: Date | Time | Customer | Phone | Direction | Message
+// Auto-creates the sheet with a header row if it doesn't exist yet.
+
+export async function logMessage(
+  direction: 'IN' | 'OUT',
+  customerName: string,
+  customerPhone: string,
+  message: string,
+): Promise<void> {
+  try {
+    const sheets = getClient();
+    const now = new Date();
+    const date = now.toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+    const time = now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit' });
+
+    // Ensure the sheet exists
+    const meta = await sheets.spreadsheets.get({ spreadsheetId: config.google.sheetId });
+    const exists = (meta.data.sheets || []).some((s) => s.properties?.title === 'Message Log');
+    if (!exists) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: config.google.sheetId,
+        requestBody: {
+          requests: [{ addSheet: { properties: { title: 'Message Log' } } }],
+        },
+      });
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: config.google.sheetId,
+        range: 'Message Log!A1:F1',
+        valueInputOption: 'RAW',
+        requestBody: { values: [['Date', 'Time', 'Customer', 'Phone', 'Direction', 'Message']] },
+      });
+    }
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: config.google.sheetId,
+      range: 'Message Log!A:A',
+      valueInputOption: 'RAW',
+      requestBody: { values: [[date, time, customerName, customerPhone, direction, message]] },
+    });
+  } catch (err) {
+    logger.warn('Failed to write to Message Log', { error: err });
+  }
+}
+
 function resolveProductName(raw: string): string {
   const key = raw.trim().toLowerCase();
   return ABBREV_TO_PRODUCT[key] || key;

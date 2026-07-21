@@ -1,6 +1,6 @@
 import cron from 'node-cron';
-import { getCustomers, getTodaysOrders, markOrdersAsEmailed, syncOrdersToRestaurantDataSheets } from './sheets';
-import { sendSms, buildOrderPromptMessage, forwardToAdmin } from './sms';
+import { getCustomers, getTodaysOrders, markOrdersAsEmailed, syncOrdersToRestaurantDataSheets, logMessage } from './sheets';
+import { sendSms, buildOrderPromptMessage } from './sms';
 import { formatSummaryText, formatSummaryHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName, groupOrdersByRoute } from './orderSummary';
 import { sendWarehouseEmail } from './email';
 import { ensureOrdersSheet } from './sheets';
@@ -85,6 +85,7 @@ async function morningJob(): Promise<void> {
       const results = await Promise.allSettled(
         toSend.map(async ({ customer, message }) => {
           await sendSms(customer.phone, message);
+          void logMessage('OUT', customer.name, customer.phone, message);
         }),
       );
 
@@ -149,7 +150,7 @@ async function reminderJob(): Promise<void> {
       const results = await Promise.allSettled(
         needsReminder.map(async (c) => {
           await sendSms(c.phone, 'Reminder');
-          await forwardToAdmin('out', c.name, 'Reminder', c.phone);
+          void logMessage('OUT', c.name, c.phone, 'Reminder');
         }),
       );
 
