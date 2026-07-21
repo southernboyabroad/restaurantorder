@@ -647,7 +647,6 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
 
     await replyDelay();
     await sendSms(from, confirmationMsg);
-    await forwardToAdmin('out', customer.name, confirmationMsg, from);
 
     // Notify other contacts for the same restaurant so they know the order is handled
     try {

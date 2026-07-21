@@ -85,7 +85,6 @@ async function morningJob(): Promise<void> {
       const results = await Promise.allSettled(
         toSend.map(async ({ customer, message }) => {
           await sendSms(customer.phone, message);
-          await forwardToAdmin('out', customer.name, message, customer.phone);
         }),
       );
 
