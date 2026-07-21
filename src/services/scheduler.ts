@@ -59,12 +59,20 @@ async function morningJob(): Promise<void> {
         .filter((c) => !c.smsDays || c.smsDays.includes(dow))
         .filter((c) => !alreadyOrderedNames.has(c.name.toLowerCase()))
         .map((c) => {
+          // Per-customer message overrides keyed by lowercase name substring
+          const CUSTOMER_MSG_OVERRIDES: Record<string, string> = {
+            'b-52': 'Good morning. What can I get you guys for Wednesday delivery?',
+          };
+          const customerOverride = Object.entries(CUSTOMER_MSG_OVERRIDES)
+            .find(([key]) => c.name.toLowerCase().includes(key))?.[1];
+
           const routeMsg = buildOrderPromptMessage(c.route);
           // If the route has no text today but this customer has an explicit smsDays
           // override that includes today, use a day-appropriate message instead.
-          const message = (routeMsg === null && c.smsDays?.includes(dow))
-            ? 'Good morning... what can I get you for tomorrow?'
-            : routeMsg;
+          const message = customerOverride
+            ?? ((routeMsg === null && c.smsDays?.includes(dow))
+              ? 'Good morning... what can I get you for tomorrow?'
+              : routeMsg);
           return { customer: c, message };
         })
         .filter((entry): entry is { customer: typeof entry.customer; message: string } => entry.message !== null);
