@@ -110,6 +110,36 @@ export async function logMessage(
       valueInputOption: 'RAW',
       requestBody: { values: [[date, time, customerName, customerPhone, direction, message]] },
     });
+
+    // Apply alternating row color by date
+    const logMeta = await sheets.spreadsheets.get({ spreadsheetId: config.google.sheetId });
+    const logSheet = (logMeta.data.sheets || []).find((s) => s.properties?.title === 'Message Log');
+    const logSheetId = logSheet?.properties?.sheetId ?? null;
+    if (logSheetId !== null) {
+      const existing = await sheets.spreadsheets.values.get({
+        spreadsheetId: config.google.sheetId,
+        range: 'Message Log!A2:A',
+      });
+      const rows = existing.data.values || [];
+      const priorDates = new Set(
+        rows.map((r: string[]) => r[0]).filter((d: string) => d && d !== date)
+      );
+      const colorIndex = priorDates.size % 2;
+      const newRowIndex = rows.length;
+      const color = ORDER_ROW_COLORS[colorIndex];
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: config.google.sheetId,
+        requestBody: {
+          requests: [{
+            repeatCell: {
+              range: { sheetId: logSheetId, startRowIndex: newRowIndex, endRowIndex: newRowIndex + 1 },
+              cell: { userEnteredFormat: { backgroundColor: color } },
+              fields: 'userEnteredFormat.backgroundColor',
+            },
+          }],
+        },
+      });
+    }
   } catch (err) {
     logger.warn('Failed to write to Message Log', { error: err });
   }
