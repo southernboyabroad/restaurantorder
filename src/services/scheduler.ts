@@ -158,15 +158,16 @@ async function reminderJob(): Promise<void> {
       logger.info('Reminder SMS test complete: 1 sent to test number');
     } else {
       const results = await Promise.allSettled(
-        needsReminder.map(async (c) => {
-          await sendSms(c.phone, 'Reminder');
-          void logMessage('OUT', c.name, c.phone, 'Reminder');
-        }),
+        needsReminder.map((c) => sendSms(c.phone, 'Reminder')),
       );
 
       const succeeded = results.filter((r) => r.status === 'fulfilled').length;
       const failed = results.filter((r) => r.status === 'rejected').length;
       logger.info(`Reminder SMS complete: ${succeeded} sent, ${failed} failed`);
+
+      for (const c of needsReminder) {
+        await logMessage('OUT', c.name, c.phone, 'Reminder');
+      }
     }
   } catch (err) {
     logger.error('Reminder job failed', { error: err });
