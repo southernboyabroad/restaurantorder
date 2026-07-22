@@ -91,15 +91,17 @@ async function morningJob(): Promise<void> {
       }
 
       const results = await Promise.allSettled(
-        toSend.map(async ({ customer, message }) => {
-          await sendSms(customer.phone, message);
-          void logMessage('OUT', customer.name, customer.phone, message);
-        }),
+        toSend.map(({ customer, message }) => sendSms(customer.phone, message)),
       );
 
       const succeeded = results.filter((r) => r.status === 'fulfilled').length;
       const failed = results.filter((r) => r.status === 'rejected').length;
       logger.info(`Morning SMS blast complete: ${succeeded} sent, ${failed} failed`);
+
+      // Log sequentially after the blast to avoid concurrent Sheets write conflicts
+      for (const { customer, message } of toSend) {
+        await logMessage('OUT', customer.name, customer.phone, message);
+      }
     }
 
     // Sync any pre-entered orders (e.g. called-in orders entered manually) to
