@@ -3,7 +3,7 @@ import { config } from '../config';
 import { validateTwilioWebhook, buildOrderPromptMessage, buildConfirmationMessage } from './sms';
 import { findCustomerByPhone, findCustomerByNameHint, normalizePhone, appendOrder, markOrdersAsEmailed, hasBatchBeenSent, getLastOrderForCustomer, getTodaysOrders, updateTodaysOrder, getOtherContactsForCustomer, logMessage, Customer } from './sheets';
 import { parseOrder, parseOrderStrict, isAffirmativeReply, isRepeatOrderRequest, isDeclineReply, isCalledInReply, parseCorrectionRequest, preprocessCorrectionText, isReactionMessage, parseAdminOrderRequest } from './orderParser';
-import { sendSms } from './sms';
+import { sendSms, forwardToAdmin } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
 import { formatOrderText, formatOrderHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
 import { sendWarehouseEmail } from './email';
@@ -338,8 +338,9 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     const customer = await findCustomerByPhone(from);
     const isAdmin = isAdminSender;
 
-    // Forward inbound SMS to admin so they can follow along
+    // Forward inbound SMS to admin phone and log to spreadsheet
     const customerLabel = customer?.name || 'Unknown';
+    void forwardToAdmin('in', customerLabel, body, from);
     void logMessage('IN', customerLabel, from, body);
 
     // ── Ignore message reactions (👍 to "..." / Liked "...") ──────
