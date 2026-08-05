@@ -190,6 +190,9 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   cleaned = cleaned.replace(/(\d+)-\s+/g, '$1-');
   // "4 - inch" or "4 - in" → "4-inch" / "4-in" (spaces around hyphen in product names)
   cleaned = cleaned.replace(/(\d+)\s+-\s*(inch|in)\b/g, '$1-$2');
+  // "4 inch" or "5 in" → "4-inch" / "5-in" (plain space, no hyphen) — prevents the bare
+  // digit from being mistaken for a standalone quantity in positional mapping
+  cleaned = cleaned.replace(/\b(\d+)\s+(inch|in)\b/g, '$1-$2');
   // "(5) 4 inch" → "5 4 inch" — strip parentheses around quantities
   cleaned = cleaned.replace(/\((\d+)\)/g, '$1');
   // "4"" or "4″" → "4-inch" — normalize inch symbols (straight, curly, double-prime)
@@ -239,6 +242,7 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   for (const { label, product } of namePairs) {
     const escaped = escapeRegex(label);
     const patterns = [
+      new RegExp(`(\\d+)[ \\t]+of[ \\t]+(the[ \\t]+)?${escaped}\\b`, 'gi'), // "3 of the 4-inch"
       new RegExp(`(\\d+)[ \\t]+${escaped}\\b`, 'gi'),           // "10 toast"
       new RegExp(`(\\d+)[ \\t]*[-:=][ \\t]*${escaped}\\b`, 'gi'), // "5 - toast", "5: toast"
       new RegExp(`${escaped}[ \\t]*[-:=]?[ \\t]*(\\d+)`, 'gi'),   // "toast 10", "toast: 10", "toast -10"
