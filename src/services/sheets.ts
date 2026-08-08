@@ -288,6 +288,7 @@ const RESTAURANT_DATA_COLUMNS_25252 = [
   'dinner_rolls',           // G
   'top_slice',              // H
   'hoagie',                 // I
+  'slider',                 // J
 ];
 
 // Route 25248: same as 25252 plus the three new products in J, K, L, and potato_bread in M
