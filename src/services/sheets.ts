@@ -67,6 +67,14 @@ const ABBREV_TO_PRODUCT: Record<string, string> = {
   'sandwich bread': 'potato_bread',
   'slice bread': 'potato_bread',
   'sliced bread': 'potato_bread',
+  'slider': 'slider',
+  'sliders': 'slider',
+  '12 slice': 'slider',
+  '12-slice': 'slider',
+  'slider bun': 'slider',
+  'slider buns': 'slider',
+  'slider roll': 'slider',
+  'slider rolls': 'slider',
 };
 
 // ── Message Log ─────────────────────────────────────────────────
