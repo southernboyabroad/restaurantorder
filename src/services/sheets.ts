@@ -293,7 +293,7 @@ const RESTAURANT_DATA_COLUMNS_25252 = [
   'slider',                 // L
 ];
 
-// Route 25248: same as 25252 plus the three new products in J, K, L, and potato_bread in M
+// Route 25248: same as 25252 plus the three new products in J, K, L, potato_bread in M, slider in N
 const RESTAURANT_DATA_COLUMNS_25248 = [
   'institutional_sandwich', // C
   '4-inch',                 // D
@@ -306,6 +306,7 @@ const RESTAURANT_DATA_COLUMNS_25248 = [
   'plain_marty',            // K
   '5-inch',                 // L
   'potato_bread',           // M
+  'slider',                 // N
 ];
 
 // Routes that have a dedicated Restaurant_Data sheet
