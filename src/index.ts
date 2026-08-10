@@ -2,7 +2,7 @@ import express from 'express';
 import { config } from './config';
 import { webhookRouter } from './services/webhook';
 import { startScheduler, reminderJob } from './services/scheduler';
-import { getTodaysOrders } from './services/sheets';
+import { getTodaysOrders, updateDailySummaryTab } from './services/sheets';
 import { updateDeliveryTabOrder } from './services/deliveryTab';
 import logger from './logger';
 
@@ -70,6 +70,17 @@ app.get('/api/sync-delivery', async (_req, res) => {
       skipped,
       errors: errors.length > 0 ? errors : undefined,
     });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
+// ── Manual trigger — GET /api/daily-totals ──────────────────────
+app.get('/api/daily-totals', async (_req, res) => {
+  try {
+    const dateStr = new Date().toISOString().slice(0, 10);
+    await updateDailySummaryTab(dateStr);
+    res.json({ ok: true, message: `Daily Totals tab updated for ${dateStr}` });
   } catch (err) {
     res.status(500).json({ ok: false, error: String(err) });
   }
