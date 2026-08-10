@@ -491,6 +491,9 @@ export async function appendOrder(order: OrderRow): Promise<void> {
     await updateRestaurantDataRow(restaurantSheet.sheetId, restaurantSheet.columns, order.name, order.date, order.quantities);
   }
 
+  // Update the Daily Totals summary tab (fire-and-forget — non-fatal)
+  void updateDailySummaryTab(order.date);
+
   logger.info(`Order recorded for ${order.name} (${order.phone})`);
 }
 
@@ -572,6 +575,73 @@ export async function markOrdersAsEmailed(dateStr: string): Promise<void> {
   });
 
   logger.info(`Marked ${updates.length} orders as emailed for ${dateStr}`);
+}
+
+// ── Daily Totals tab ────────────────────────────────────────────
+// Rewrites the "Daily Totals" tab with product totals for today's orders,
+// broken out by route (25252 / 25248) plus an overall total column.
+// Called on every order and at the 11:30 AM summary job so late orders are included.
+
+const DAILY_TOTALS_SHEET = 'Daily Totals';
+const SUMMARY_ROUTES = ['25252', '25248'];
+
+export async function updateDailySummaryTab(dateStr: string): Promise<void> {
+  try {
+    const sheets = getClient();
+    const orders = await getTodaysOrders(dateStr);
+
+    // Ensure the sheet exists
+    const meta = await sheets.spreadsheets.get({ spreadsheetId: config.google.sheetId });
+    const exists = (meta.data.sheets || []).some((s) => s.properties?.title === DAILY_TOTALS_SHEET);
+    if (!exists) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: config.google.sheetId,
+        requestBody: { requests: [{ addSheet: { properties: { title: DAILY_TOTALS_SHEET } } }] },
+      });
+    }
+
+    // Sum quantities per product per route
+    const totals: Record<string, Record<string, number>> = {};
+    for (const route of SUMMARY_ROUTES) totals[route] = {};
+
+    for (const order of orders) {
+      const route = SUMMARY_ROUTES.includes(order.route) ? order.route : null;
+      if (!route) continue;
+      for (const product of config.products) {
+        totals[route][product] = (totals[route][product] || 0) + (order.quantities[product] || 0);
+      }
+    }
+
+    // Build rows
+    const rows: (string | number)[][] = [
+      [`Date: ${dateStr}`],
+      [],
+      ['Product', ...SUMMARY_ROUTES, 'Total'],
+    ];
+
+    for (const product of config.products) {
+      const routeVals = SUMMARY_ROUTES.map((r) => totals[r][product] || 0);
+      const total = routeVals.reduce((a, b) => a + b, 0);
+      if (total === 0) continue; // skip products with no orders today
+      rows.push([product, ...routeVals, total]);
+    }
+
+    // Clear and rewrite
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: config.google.sheetId,
+      range: `${DAILY_TOTALS_SHEET}!A1:Z50`,
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: config.google.sheetId,
+      range: `${DAILY_TOTALS_SHEET}!A1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: rows },
+    });
+
+    logger.info(`Daily Totals tab updated for ${dateStr} (${orders.length} orders)`);
+  } catch (err) {
+    logger.warn('Failed to update Daily Totals tab', { error: err });
+  }
 }
 
 // Convert 0-based column index to spreadsheet letter (0=A, 1=B, …, 25=Z, 26=AA)

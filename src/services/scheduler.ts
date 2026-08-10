@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { getCustomers, getTodaysOrders, markOrdersAsEmailed, syncOrdersToRestaurantDataSheets, logMessage } from './sheets';
+import { getCustomers, getTodaysOrders, markOrdersAsEmailed, syncOrdersToRestaurantDataSheets, logMessage, updateDailySummaryTab } from './sheets';
 import { sendSms, buildOrderPromptMessage } from './sms';
 import { formatSummaryText, formatSummaryHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName, groupOrdersByRoute } from './orderSummary';
 import { sendWarehouseEmail } from './email';
@@ -232,6 +232,13 @@ async function afternoonJob(): Promise<void> {
       await syncOrdersToRestaurantDataSheets(dateStr);
     } catch (syncErr) {
       logger.error('Failed to sync orders to Restaurant_Data sheets at 11:30', { error: syncErr });
+    }
+
+    // Final Daily Totals update after all orders are in and synced
+    try {
+      await updateDailySummaryTab(dateStr);
+    } catch (totalsErr) {
+      logger.error('Failed to update Daily Totals tab at 11:30', { error: totalsErr });
     }
 
     logger.info('=== AFTERNOON JOB COMPLETE ===');
