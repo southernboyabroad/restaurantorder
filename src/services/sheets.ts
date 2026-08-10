@@ -1,5 +1,6 @@
 import { google, sheets_v4 } from 'googleapis';
 import { config } from '../config';
+import { productDisplayName } from './orderSummary';
 import logger from '../logger';
 
 // ── Sheet layout ────────────────────────────────────────────────
@@ -642,7 +643,7 @@ export async function updateDailySummaryTab(dateStr?: string): Promise<void> {
       const routeVals = SUMMARY_ROUTES.map((r) => totals[r][product] || 0);
       const total = routeVals.reduce((a, b) => a + b, 0);
       if (total === 0) continue; // skip products with no orders today
-      rows.push([product, ...routeVals, total]);
+      rows.push([productDisplayName(product), ...routeVals, total]);
     }
 
     // Clear and rewrite
