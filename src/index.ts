@@ -78,9 +78,8 @@ app.get('/api/sync-delivery', async (_req, res) => {
 // ── Manual trigger — GET /api/daily-totals ──────────────────────
 app.get('/api/daily-totals', async (_req, res) => {
   try {
-    const dateStr = new Date().toISOString().slice(0, 10);
-    await updateDailySummaryTab(dateStr);
-    res.json({ ok: true, message: `Daily Totals tab updated for ${dateStr}` });
+    await updateDailySummaryTab();
+    res.json({ ok: true, message: 'Daily Totals tab updated' });
   } catch (err) {
     res.status(500).json({ ok: false, error: String(err) });
   }

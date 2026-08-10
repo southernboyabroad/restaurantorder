@@ -585,10 +585,29 @@ export async function markOrdersAsEmailed(dateStr: string): Promise<void> {
 const DAILY_TOTALS_SHEET = 'Daily Totals';
 const SUMMARY_ROUTES = ['25252', '25248'];
 
-export async function updateDailySummaryTab(dateStr: string): Promise<void> {
+// Find the earliest upcoming order date in the Orders sheet (today or future).
+// Falls back to today if nothing is found.
+async function findNextOrderDate(): Promise<string> {
+  const today = new Date().toISOString().slice(0, 10);
   try {
     const sheets = getClient();
-    const orders = await getTodaysOrders(dateStr);
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: config.google.sheetId,
+      range: 'Orders!A2:A',
+    });
+    const dates = (res.data.values || [])
+      .map((r: string[]) => r[0])
+      .filter((d: string) => d >= today);
+    if (dates.length > 0) return dates.sort()[0];
+  } catch { /* fall through */ }
+  return today;
+}
+
+export async function updateDailySummaryTab(dateStr?: string): Promise<void> {
+  try {
+    const sheets = getClient();
+    const date = dateStr ?? await findNextOrderDate();
+    const orders = await getTodaysOrders(date);
 
     // Ensure the sheet exists
     const meta = await sheets.spreadsheets.get({ spreadsheetId: config.google.sheetId });
@@ -614,7 +633,7 @@ export async function updateDailySummaryTab(dateStr: string): Promise<void> {
 
     // Build rows
     const rows: (string | number)[][] = [
-      [`Date: ${dateStr}`],
+      [`Date: ${date}`],
       [],
       ['Product', ...SUMMARY_ROUTES, 'Total'],
     ];
@@ -638,7 +657,7 @@ export async function updateDailySummaryTab(dateStr: string): Promise<void> {
       requestBody: { values: rows },
     });
 
-    logger.info(`Daily Totals tab updated for ${dateStr} (${orders.length} orders)`);
+    logger.info(`Daily Totals tab updated for ${date} (${orders.length} orders)`);
   } catch (err) {
     logger.warn('Failed to update Daily Totals tab', { error: err });
   }
