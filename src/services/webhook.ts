@@ -295,6 +295,13 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
 
   logger.info('Inbound SMS received', { from, body });
 
+  // Blank/whitespace-only messages (e.g. accidental sends) are ignored entirely
+  if (!body || !body.trim()) {
+    logger.info('Empty message body — ignoring', { from });
+    res.type('text/xml').send('<Response></Response>');
+    return;
+  }
+
   // ── Check ordering window ──────────────────────────────────────
   // Inside the normal window (Wed/Fri/Sat 9:30 AM - 1 PM) → process normally
   // Early order window (after 6 PM on ordering days, or non-ordering days) → accept for next delivery
