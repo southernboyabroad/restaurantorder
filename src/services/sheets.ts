@@ -167,6 +167,7 @@ export interface Customer {
   productOrder?: string[]; // positional product mapping, e.g. ["toast", "4-inch"]
   smsDays?: number[]; // days-of-week to send SMS (JS convention: 0=Sun … 6=Sat). If omitted, uses the route's default schedule.
   productMap?: Record<string, string>; // per-customer product remapping, e.g. { long: "top_slice" }
+  prefix?: string; // keyword prefix used to disambiguate when multiple locations share one phone number
 }
 
 export interface OrderRow {
@@ -208,7 +209,7 @@ export async function getCustomers(): Promise<Customer[]> {
   const sheets = getClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: config.google.sheetId,
-    range: 'Customers!A2:G', // skip header; col C = default product, col D = route, col E = product order, col F = SMS days, col G = product map
+    range: 'Customers!A2:H', // skip header; col C = default product, col D = route, col E = product order, col F = SMS days, col G = product map, col H = prefix
   });
 
   const rows = res.data.values || [];
@@ -236,6 +237,7 @@ export async function getCustomers(): Promise<Customer[]> {
               .filter((parts: string[]) => parts.length === 2),
           )
         : undefined,
+      prefix: row[7]?.trim().toLowerCase() || undefined,
     }));
 
   logger.info(`Loaded ${customers.length} customers from Sheets`);
@@ -748,6 +750,12 @@ export async function findCustomerByPhone(phone: string): Promise<Customer | und
   const normalized = normalizePhone(phone);
   const customers = await getCustomers();
   return customers.find((c) => normalizePhone(c.phone) === normalized);
+}
+
+export async function findCustomersByPhone(phone: string): Promise<Customer[]> {
+  const normalized = normalizePhone(phone);
+  const customers = await getCustomers();
+  return customers.filter((c) => normalizePhone(c.phone) === normalized);
 }
 
 // ── Look up a customer by partial name ──────────────────────────

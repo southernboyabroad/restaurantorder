@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import { config } from '../config';
 import { validateTwilioWebhook, buildOrderPromptMessage, buildConfirmationMessage } from './sms';
-import { findCustomerByPhone, findCustomerByNameHint, normalizePhone, appendOrder, markOrdersAsEmailed, hasBatchBeenSent, getLastOrderForCustomer, getTodaysOrders, updateTodaysOrder, getOtherContactsForCustomer, logMessage, Customer } from './sheets';
+import { findCustomerByPhone, findCustomersByPhone, findCustomerByNameHint, normalizePhone, appendOrder, markOrdersAsEmailed, hasBatchBeenSent, getLastOrderForCustomer, getTodaysOrders, updateTodaysOrder, getOtherContactsForCustomer, logMessage, Customer } from './sheets';
 import { parseOrder, parseOrderStrict, isAffirmativeReply, isRepeatOrderRequest, isDeclineReply, isCalledInReply, parseCorrectionRequest, preprocessCorrectionText, isReactionMessage, parseAdminOrderRequest } from './orderParser';
 import { sendSms, forwardToAdmin } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
@@ -341,8 +341,35 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
   }
 
   try {
-    // Look up customer
-    const customer = await findCustomerByPhone(from);
+    // Look up customer — handle shared phone numbers with location prefixes
+    let customer: Customer | undefined;
+    let parsedBody = body; // may have prefix stripped
+
+    const allMatches = await findCustomersByPhone(from);
+    if (allMatches.length > 1) {
+      // Multiple locations share this phone — try to match a prefix keyword
+      const bodyLower = body.trim().toLowerCase();
+      const prefixMatch = allMatches.find(
+        (c) => c.prefix && (bodyLower.startsWith(c.prefix + ':') || bodyLower.startsWith(c.prefix + ' ')),
+      );
+      if (prefixMatch) {
+        customer = prefixMatch;
+        // Strip prefix + optional colon/space from the message before parsing
+        const stripped = body.trim().replace(new RegExp(`^${prefixMatch.prefix}\\s*:?\\s*`, 'i'), '').trim();
+        parsedBody = stripped || body;
+        logger.info('Multi-location prefix matched', { from, prefix: prefixMatch.prefix, customer: prefixMatch.name });
+      } else {
+        // No prefix — fall back to first matching customer but warn
+        customer = allMatches[0];
+        logger.warn('Multiple customers share this phone but no prefix found — defaulting to first', {
+          from,
+          customers: allMatches.map((c) => c.name),
+        });
+      }
+    } else {
+      customer = allMatches[0];
+    }
+
     const isAdmin = isAdminSender;
 
     // Forward inbound SMS to admin phone and log to spreadsheet
@@ -378,7 +405,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     }
 
     // ── Check for order correction ──────────────────────────────
-    const correction = parseCorrectionRequest(body);
+    const correction = parseCorrectionRequest(parsedBody);
     if (correction) {
       await handleCorrection(from, customer, isAdmin, correction, res, orderDateStr);
       return;
@@ -388,7 +415,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     // e.g. "order for thumb suckers 10 toast 5 hoagie"
     //      "order for 13529883447 toast 10"
     if (isAdmin) {
-      const adminOrder = parseAdminOrderRequest(body);
+      const adminOrder = parseAdminOrderRequest(parsedBody);
       if (adminOrder) {
         await handleAdminOrder(from, adminOrder, res, orderDateStr);
         return;
@@ -423,9 +450,13 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     const todaysOrders = await getTodaysOrders(dateStr);
     const normalizedFrom = normalizePhone(from);
 
-    // Check if THIS specific phone already placed an order today
+    // Check if THIS specific customer already placed an order today.
+    // For shared-phone multi-location customers, match by name so each location
+    // can order independently on the same phone number.
     const senderAlreadyOrdered = todaysOrders.some(
-      (o) => normalizePhone(o.phone) === normalizedFrom,
+      (o) =>
+        normalizePhone(o.phone) === normalizedFrom &&
+        o.name.toLowerCase() === customer.name.toLowerCase(),
     );
 
     if (senderAlreadyOrdered) {
@@ -464,7 +495,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     }
 
     // Parse the order (pass default product and product order for bare-number mapping)
-    const parsed = await parseOrder(body, customer.defaultProduct, customer.productOrder);
+    const parsed = await parseOrder(parsedBody, customer.defaultProduct, customer.productOrder);
 
     // Apply per-customer product remapping (e.g. Tilly's: long → top_slice)
     const effectiveProductMap = getEffectiveProductMap(customer);
@@ -484,7 +515,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
 
     if (!hasItems) {
       // Check if this is an affirmative reply like "Yes", "Okay", "Sure"
-      if (isAffirmativeReply(body) && !allZeroExplicit) {
+      if (isAffirmativeReply(parsedBody) && !allZeroExplicit) {
         logger.info('Affirmative reply detected — asking for quantities', { from, body });
         let followUp: string;
         if (customer.productOrder && customer.productOrder.length > 0) {
@@ -505,7 +536,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
 
       // Check if the customer is declining / skipping their order
       // (either via keyword patterns, AI-detected intent, or all-zero explicit quantities)
-      if (isDeclineReply(body) || parsed.declined || allZeroExplicit) {
+      if (isDeclineReply(parsedBody) || parsed.declined || allZeroExplicit) {
         logger.info('Decline reply detected — recording zero order', { from, body, name: customer.name });
 
         // Record a zero-quantity order so the 10:30 reminder is suppressed
@@ -542,7 +573,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       }
 
       // Check if the customer called the order in by phone
-      if (isCalledInReply(body)) {
+      if (isCalledInReply(parsedBody)) {
         logger.info('Called-in reply detected — notifying admin', { from, body, name: customer.name });
         const calledInMsg = `Got it — ${customer.name} called their order in. We'll get it entered.`;
         await replyDelay();
@@ -553,7 +584,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       }
 
       // Check if this is a repeat-order request like "same as last time"
-      if (isRepeatOrderRequest(body)) {
+      if (isRepeatOrderRequest(parsedBody)) {
         logger.info('Repeat order request detected — looking up last order', { from, body });
         const lastOrder = await getLastOrderForCustomer(from);
         if (lastOrder) {
