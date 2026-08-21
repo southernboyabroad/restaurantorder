@@ -1,6 +1,6 @@
 import cron from 'node-cron';
-import { getCustomers, getTodaysOrders, markOrdersAsEmailed } from './sheets';
-import { sendSms, buildOrderPromptMessage, forwardToAdmin } from './sms';
+import { getCustomers, getTodaysOrders, markOrdersAsEmailed, syncOrdersToRestaurantDataSheets, logMessage, updateDailySummaryTab } from './sheets';
+import { sendSms, buildOrderPromptMessage } from './sms';
 import { formatSummaryText, formatSummaryHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName, groupOrdersByRoute } from './orderSummary';
 import { sendWarehouseEmail } from './email';
 import { ensureOrdersSheet } from './sheets';
@@ -58,7 +58,23 @@ async function morningJob(): Promise<void> {
       const toSend = customers
         .filter((c) => !c.smsDays || c.smsDays.includes(dow))
         .filter((c) => !alreadyOrderedNames.has(c.name.toLowerCase()))
-        .map((c) => ({ customer: c, message: buildOrderPromptMessage(c.route) }))
+        .map((c) => {
+          // Per-customer message overrides keyed by lowercase name substring
+          const CUSTOMER_MSG_OVERRIDES: Record<string, string> = {
+            'b-52': 'Good morning. What can I get you guys for Wednesday delivery?',
+          };
+          const customerOverride = Object.entries(CUSTOMER_MSG_OVERRIDES)
+            .find(([key]) => c.name.toLowerCase().includes(key))?.[1];
+
+          const routeMsg = buildOrderPromptMessage(c.route);
+          // If the route has no text today but this customer has an explicit smsDays
+          // override that includes today, use a day-appropriate message instead.
+          const message = customerOverride
+            ?? ((routeMsg === null && c.smsDays?.includes(dow))
+              ? 'Good morning... what can I get you for tomorrow?'
+              : routeMsg);
+          return { customer: c, message };
+        })
         .filter((entry): entry is { customer: typeof entry.customer; message: string } => entry.message !== null);
 
       const skippedRoute = customers.length - customers.filter((c) => !c.smsDays || c.smsDays.includes(dow)).length;
@@ -75,15 +91,27 @@ async function morningJob(): Promise<void> {
       }
 
       const results = await Promise.allSettled(
-        toSend.map(async ({ customer, message }) => {
-          await sendSms(customer.phone, message);
-          await forwardToAdmin('out', customer.name, message, customer.phone);
-        }),
+        toSend.map(({ customer, message }) => sendSms(customer.phone, message)),
       );
 
       const succeeded = results.filter((r) => r.status === 'fulfilled').length;
       const failed = results.filter((r) => r.status === 'rejected').length;
       logger.info(`Morning SMS blast complete: ${succeeded} sent, ${failed} failed`);
+
+      // Log sequentially after the blast to avoid concurrent Sheets write conflicts
+      for (const { customer, message } of toSend) {
+        await logMessage('OUT', customer.name, customer.phone, message);
+      }
+    }
+
+    // Sync any pre-entered orders (e.g. called-in orders entered manually) to
+    // route-specific Restaurant_Data sheets. This runs after the SMS blast so
+    // that customers with early orders are already skipped above, and their
+    // orders get synced to the route sheets here.
+    try {
+      await syncOrdersToRestaurantDataSheets(todayDateStr());
+    } catch (syncErr) {
+      logger.error('Failed to sync pre-entered orders to Restaurant_Data sheets', { error: syncErr });
     }
   } catch (err) {
     logger.error('Morning job failed', { error: err });
@@ -115,7 +143,7 @@ async function reminderJob(): Promise<void> {
       (c) =>
         !orderedNames.has(c.name.toLowerCase()) &&
         (!c.smsDays || c.smsDays.includes(dow)) &&
-        buildOrderPromptMessage(c.route) !== null,
+        (buildOrderPromptMessage(c.route) !== null || c.smsDays?.includes(dow)),
     );
 
     if (needsReminder.length === 0) {
@@ -130,15 +158,16 @@ async function reminderJob(): Promise<void> {
       logger.info('Reminder SMS test complete: 1 sent to test number');
     } else {
       const results = await Promise.allSettled(
-        needsReminder.map(async (c) => {
-          await sendSms(c.phone, 'Reminder');
-          await forwardToAdmin('out', c.name, 'Reminder', c.phone);
-        }),
+        needsReminder.map((c) => sendSms(c.phone, 'Reminder')),
       );
 
       const succeeded = results.filter((r) => r.status === 'fulfilled').length;
       const failed = results.filter((r) => r.status === 'rejected').length;
       logger.info(`Reminder SMS complete: ${succeeded} sent, ${failed} failed`);
+
+      for (const c of needsReminder) {
+        await logMessage('OUT', c.name, c.phone, 'Reminder');
+      }
     }
   } catch (err) {
     logger.error('Reminder job failed', { error: err });
@@ -178,19 +207,39 @@ async function afternoonJob(): Promise<void> {
       return;
     }
 
-    // Aggregate unsent orders by route and send one totaled email per route
+    // Aggregate unsent orders by route and send one totaled email per route.
+    // Skip routes where every product total is zero (e.g. all-decline orders).
     const routeSummaries = groupOrdersByRoute(dateStr, unsent);
     for (const summary of routeSummaries) {
+      const hasItems = Object.values(summary.totalsByProduct).some((qty) => qty > 0);
+      if (!hasItems) {
+        logger.info(`Skipping email for route ${summary.route || 'Unassigned'} — no items to report`);
+        continue;
+      }
       const routeLabel = summary.route || 'Unassigned';
       const subject = `ADDITIONS to Route ${routeLabel}- ${deliveryDateStr}`;
       const textBody = formatSummaryText(summary, dayName);
       const htmlBody = formatSummaryHtml(summary, dayName);
-
       await sendWarehouseEmail(subject, textBody, htmlBody);
       logger.info(`Aggregated email sent for route ${routeLabel} (${summary.orderCount} orders)`);
     }
 
     await markOrdersAsEmailed(dateStr);
+
+    // Re-sync all today's orders to route-specific Restaurant_Data sheets so
+    // any manual edits made in the Orders tab after the morning sync are reflected.
+    try {
+      await syncOrdersToRestaurantDataSheets(dateStr);
+    } catch (syncErr) {
+      logger.error('Failed to sync orders to Restaurant_Data sheets at 11:30', { error: syncErr });
+    }
+
+    // Final Daily Totals update after all orders are in and synced
+    try {
+      await updateDailySummaryTab(dateStr);
+    } catch (totalsErr) {
+      logger.error('Failed to update Daily Totals tab at 11:30', { error: totalsErr });
+    }
 
     logger.info('=== AFTERNOON JOB COMPLETE ===');
   } catch (err) {

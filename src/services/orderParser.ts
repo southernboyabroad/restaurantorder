@@ -5,6 +5,8 @@ import logger from '../logger';
 export interface ParsedOrder {
   quantities: Record<string, number>;
   confident: boolean;
+  declined?: boolean; // true when AI detects the customer is declining/skipping their order
+  _hasOrphanedNumbers?: boolean; // internal: regex left digit tokens unpaired — AI should supplement
 }
 
 // ── Product aliases ─────────────────────────────────────────────
@@ -15,6 +17,8 @@ const PRODUCT_ALIASES: Record<string, string> = {
   'texas toast': 'toast',
   'texas': 'toast',
   '4-inch': '4-inch',
+  '4 - inch': '4-inch',
+  '4 - in': '4-inch',
   '4-in': '4-inch',
   '4 in': '4-inch',
   '4 inch': '4-inch',
@@ -38,23 +42,91 @@ const PRODUCT_ALIASES: Record<string, string> = {
   'four inch bun': '4-inch',
   'bun': '4-inch',
   'buns': '4-inch',
+  'burger': '4-inch',
+  'burgers': '4-inch',
+  'hamburger': '4-inch',
+  'hamburger bun': '4-inch',
+  'hamburger buns': '4-inch',
   'long': 'long',
   'long roll': 'long',
   'long rolls': 'long',
   'hot dog': 'long',
   'hot dogs': 'long',
+  'hot dog bun': 'long',
+  'hot dog buns': 'long',
   'hotdog': 'long',
   'hotdogs': 'long',
+  'hotdog bun': 'long',
+  'hotdog buns': 'long',
+  'top split hotdog': 'long',
+  'top split hotdogs': 'long',
+  'top split hot dog': 'long',
+  'top split hot dogs': 'long',
+  'top split roll': 'long',
+  'top split rolls': 'long',
+  'top split bun': 'long',
+  'top split buns': 'long',
+  'top split': 'long',
   'institutional_sandwich': 'institutional_sandwich',
   'institutional sandwich': 'institutional_sandwich',
   'sandwich': 'institutional_sandwich',
   'sandwiches': 'institutional_sandwich',
   'sand roll': 'institutional_sandwich',
   'sand rolls': 'institutional_sandwich',
+  'sandwich roll': 'institutional_sandwich',
+  'sandwich rolls': 'institutional_sandwich',
   'three-inch bun': 'institutional_sandwich',
   'dinner_rolls': 'dinner_rolls',
   'dinner rolls': 'dinner_rolls',
   'dinner': 'dinner_rolls',
+  'hoagie': 'hoagie',
+  'hoagies': 'hoagie',
+  'sub': 'hoagie',
+  'subs': 'hoagie',
+  'sub roll': 'hoagie',
+  'sub rolls': 'hoagie',
+  'sausage roll': 'hoagie',
+  'sausage rolls': 'hoagie',
+  'top_slice': 'top_slice',
+  'top slice': 'top_slice',
+  'top slices': 'top_slice',
+  'marty': 'marty',
+  'plain_marty': 'plain_marty',
+  'plain marty': 'plain_marty',
+  'marty no seeds': 'plain_marty',
+  'marty no seed': 'plain_marty',
+  '5-inch': '5-inch',
+  '5-in': '5-inch',
+  '5 inch': '5-inch',
+  '5 in': '5-inch',
+  '5in': '5-inch',
+  'five-inch': '5-inch',
+  'five inch': '5-inch',
+  '5-inch bun': '5-inch',
+  '5-inch buns': '5-inch',
+  '5 inch bun': '5-inch',
+  '5 inch buns': '5-inch',
+  '5in bun': '5-inch',
+  '5in buns': '5-inch',
+  '5-in bun': '5-inch',
+  '5-in buns': '5-inch',
+  'potato_bread': 'potato_bread',
+  'potato bread': 'potato_bread',
+  'potato': 'potato_bread',
+  'regular bread': 'potato_bread',
+  'regular sandwich bread': 'potato_bread',
+  'sandwich bread': 'potato_bread',
+  'slice bread': 'potato_bread',
+  'sliced bread': 'potato_bread',
+  'slider': 'slider',
+  'sliders': 'slider',
+  '12 slice': 'slider',
+  '12-slice': 'slider',
+  '12slice': 'slider',
+  'slider bun': 'slider',
+  'slider buns': 'slider',
+  'slider roll': 'slider',
+  'slider rolls': 'slider',
 };
 
 // ── Word-number conversion ──────────────────────────────────────
@@ -89,8 +161,10 @@ function wordsToDigits(text: string): string {
   // when they appear right next to a product name (handled by context in the regex step).
   // For the safe words (not ambiguous), convert them directly.
   const safeWords = { ...WORD_NUMBERS };
-  // "to", "for", "ate" are too ambiguous on their own — only "too" near a product is converted
+  // "to", "too", "for", "ate" are too ambiguous on their own — skip auto-conversion
+  // ("too" caused "If it is not too late" → long: 2 via the bare-number fallback)
   delete safeWords.to;
+  delete safeWords.too;
   delete safeWords.for;
   delete safeWords.fore;
   delete safeWords.ate;
@@ -125,6 +199,23 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   // "a tray of toast" → "1 toast", "3 trays of toast" → "3 toast", "3 trays toast" → "3 toast"
   cleaned = cleaned.replace(/\ba\s+trays?\s+(of\s+)?/gi, '1 ');
   cleaned = cleaned.replace(/\btrays?\s+(of\s+)?/gi, '');
+  // "4- inch" or "4- in" → "4-inch" / "4-in" (space after hyphen in product names)
+  cleaned = cleaned.replace(/(\d+)-\s+/g, '$1-');
+  // "4 - inch" or "4 - in" → "4-inch" / "4-in" (spaces around hyphen in product names)
+  cleaned = cleaned.replace(/(\d+)\s+-\s*(inch|in)\b/g, '$1-$2');
+  // "4 inch" or "5 in" → "4-inch" / "5-in" (plain space, no hyphen) — prevents the bare
+  // digit from being mistaken for a standalone quantity in positional mapping
+  cleaned = cleaned.replace(/\b(\d+)\s+(inch|in)\b/g, '$1-$2');
+  // "(5) 4 inch" → "5 4 inch" — strip parentheses around quantities
+  cleaned = cleaned.replace(/\((\d+)\)/g, '$1');
+  // "4"" or "4″" → "4-inch" — normalize inch symbols (straight, curly, double-prime)
+  cleaned = cleaned.replace(/(\d+)["\u201C\u201D\u2033]/g, '$1-inch');
+  // "4-inch- 2" → "4-inch 2" — letter-hyphen-space before a digit (stray separator)
+  cleaned = cleaned.replace(/([a-z])-\s+(\d)/g, '$1 $2');
+  // "4buns" → "4 buns" — digit immediately adjacent to a letter (no space, no hyphen)
+  cleaned = cleaned.replace(/(\d)([a-z])/g, '$1 $2');
+  // "1. toast" or "1, toast" → "1 toast" — numbered list prefix: treat list number as quantity
+  cleaned = cleaned.replace(/(\d+)[.,]\s+(?=[a-zA-Z])/g, '$1 ');
   const normalized = wordsToDigits(cleaned);
 
   // Build a list of (name-to-match, canonical-product) pairs.
@@ -164,8 +255,10 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   for (const { label, product } of namePairs) {
     const escaped = escapeRegex(label);
     const patterns = [
-      new RegExp(`(\\d+)\\s+${escaped}\\b`, 'gi'),        // "10 toast"
-      new RegExp(`${escaped}\\s*[:=]?\\s*(\\d+)`, 'gi'),   // "toast 10" or "toast: 10"
+      new RegExp(`(\\d+)[ \\t]+of[ \\t]+(the[ \\t]+)?${escaped}\\b`, 'gi'), // "3 of the 4-inch"
+      new RegExp(`(\\d+)[ \\t]+${escaped}\\b`, 'gi'),           // "10 toast"
+      new RegExp(`(\\d+)[ \\t]*[-:=][ \\t]*${escaped}\\b`, 'gi'), // "5 - toast", "5: toast"
+      new RegExp(`${escaped}[ \\t]*[-:=]?[ \\t]*(\\d+)`, 'gi'),   // "toast 10", "toast: 10", "toast -10"
     ];
     for (const pattern of patterns) {
       let m: RegExpExecArray | null;
@@ -185,8 +278,8 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   for (const { label, product } of namePairs) {
     const escaped = escapeRegex(label);
     const patterns = [
-      new RegExp(`(\\d+),\\s*${escaped}\\b`, 'gi'),        // "6, 4-inch"
-      new RegExp(`${escaped},\\s*(\\d+)`, 'gi'),            // "toast, 10"
+      new RegExp(`(\\d+),[ \\t]*${escaped}\\b`, 'gi'),        // "6, 4-inch"
+      new RegExp(`${escaped},[ \\t]*(\\d+)`, 'gi'),            // "toast, 10"
     ];
     for (const pattern of patterns) {
       let m: RegExpExecArray | null;
@@ -203,7 +296,7 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   // If no products matched but the message contains bare numbers, try positional mapping.
   // A customer with productOrder: ["toast", "4-inch"] who texts "4 and 3" gets
   // { toast: 4, "4-inch": 3 }.
-  if (matchCount === 0 && productOrder && productOrder.length > 0) {
+  if (matchCount === 0 && productOrder && productOrder.length > 0 && normalized.length <= 80) {
     const bareNumbers = [...normalized.matchAll(/\b(\d+)\b/g)].map((m) => parseInt(m[1], 10));
     if (bareNumbers.length > 0 && bareNumbers.length <= productOrder.length) {
       for (let i = 0; i < bareNumbers.length; i++) {
@@ -220,7 +313,7 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
 
   // If no products matched but the message is just a number (e.g. "12" or "I'll take 12"),
   // and the customer has a default product, assume they mean that product.
-  if (matchCount === 0 && defaultProduct) {
+  if (matchCount === 0 && defaultProduct && normalized.length <= 80) {
     const bareNumber = normalized.match(/\b(\d+)\b/);
     if (bareNumber) {
       quantities[defaultProduct] = parseInt(bareNumber[1], 10);
@@ -234,7 +327,16 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
 
   if (matchCount === 0) return null;
 
-  return { quantities, confident: true };
+  // Detect orphaned number tokens — digits in the normalized text not covered by
+  // any matched region.  If any exist, the regex may have missed a product and
+  // the AI should be run as a supplemental pass.
+  const digitTokens = [...normalized.matchAll(/\b\d+\b/g)];
+  const _hasOrphanedNumbers = digitTokens.some(({ index = 0, 0: m }) => {
+    const end = index + m.length;
+    return !matchedRegions.some((r) => index >= r.start && end <= r.end);
+  });
+
+  return { quantities, confident: true, _hasOrphanedNumbers };
 }
 
 // ── Repeat-order detection ──────────────────────────────────────
@@ -251,6 +353,23 @@ const REPEAT_ORDER_PATTERNS = [
   /\bgive\s+me\s+(the\s+)?same\b/i,
   /\bdo\s+(the\s+)?same\b/i,
 ];
+
+// ── Message reaction detector ────────────────────────────────────
+// iOS and Android both send a text message when a user "reacts" to a
+// message.  The body contains the quoted original text, which may
+// include order quantities and cause false parses.
+//   Android:  👍 to "Heads up — an order has been placed..."
+//   iOS:      Liked "Your order for Thursday is locked in..."
+// We detect these and stay silent rather than treating them as orders.
+
+export function isReactionMessage(text: string): boolean {
+  const trimmed = text.trim();
+  // Android: any short prefix (emoji or word) + ' to "' + quoted content
+  if (/^.{1,20}\s+to\s+"/i.test(trimmed)) return true;
+  // iOS reaction verbs
+  if (/^(Liked|Loved|Laughed at|Emphasized|Questioned|Disliked)\s+"/i.test(trimmed)) return true;
+  return false;
+}
 
 export function isRepeatOrderRequest(text: string): boolean {
   const trimmed = text.trim();
@@ -304,8 +423,11 @@ export function isCalledInReply(text: string): boolean {
 
 const DECLINE_PATTERNS = [
   /\b(no|not|don'?t|dont)\s+(need|want|order|ordering)\b/i,
+  /\bno\s+bread\b/i,           // "no bread", "no bread ty", "no bread this week"
+  /\bno\s+order\b/i,           // "no order today"
   /\bnothing\s*(today|this\s*(week|time)|right\s*now|for\s*(us|me|today|now))?\b/i,
-  /\bwe'?re\s+(good|fine|ok|okay|all\s*(good|set))\b/i,
+  /\bwe('?re|\s+are)\s+(good|fine|ok|okay|all\s*(good|set))\b/i,
+  /\bwe\s+are\s+good\b/i,        // simpler backup for "we are good, thanks"
   /\bi'?m\s+(good|fine|ok|okay|all\s*(good|set))\b/i,
   /\ball\s*(good|set)\b/i,
   /\bskip\s*(this)?\s*(week|time|today|order|us)?\b/i,
@@ -315,6 +437,8 @@ const DECLINE_PATTERNS = [
   /\bnot\s*today\b/i,
   /\bno\s*thank(s| you)\b/i,
   /^\s*no\s*$/i,
+  /^\s*0\s*$/,         // bare "0" — no order this week
+  /^\s*zero\s*$/i,     // "zero"
   /\bwe\s*(will)?\s*pass\b/i,
   /\bwe'?re\s+closed\b/i,
   /\bclosed\s*(today|this\s*week)?\b/i,
@@ -400,6 +524,60 @@ export function preprocessCorrectionText(text: string): string {
   return text.replace(/\s+to\s+(\d)/g, ' $1');
 }
 
+// ── Admin order-on-behalf-of detection ──────────────────────────
+// Admin texts:
+//   "order for thumb suckers 10 toast 5 hoagie"
+//   "order for 13529883447 toast 10 hoagie 5"
+//   "order for phone number 1352-988-3447 toast 10"
+
+export interface AdminOrderRequest {
+  customerIdentifier: string; // name hint or raw phone string
+  isPhone: boolean;
+  orderText: string;
+}
+
+const ADMIN_ORDER_PREFIX = /^(?:.*?\b)?(?:place\s+)?order\s+for\s+(?:phone\s+(?:number\s+)?)?/i;
+
+export function parseAdminOrderRequest(text: string): AdminOrderRequest | null {
+  const trimmed = text.trim();
+  if (!ADMIN_ORDER_PREFIX.test(trimmed)) return null;
+
+  const afterPrefix = trimmed.replace(ADMIN_ORDER_PREFIX, '').trim();
+  if (!afterPrefix) return null;
+
+  // Detect phone: first token has 7+ digits, or starts with + / (
+  const firstToken = afterPrefix.split(/\s+/)[0];
+  const digitCount = (firstToken.match(/\d/g) || []).length;
+  const isPhoneToken = digitCount >= 7 || firstToken.startsWith('+') || firstToken.startsWith('(');
+
+  if (isPhoneToken) {
+    const spaceIdx = afterPrefix.indexOf(' ');
+    if (spaceIdx === -1) return null; // phone only, no order text
+    return {
+      customerIdentifier: afterPrefix.slice(0, spaceIdx).trim(),
+      isPhone: true,
+      orderText: afterPrefix.slice(spaceIdx + 1).trim(),
+    };
+  }
+
+  // Name-based: scan words until we hit a digit or a recognized product keyword
+  const words = afterPrefix.split(/\s+/);
+  let nameEndIdx = -1;
+  for (let i = 0; i < words.length; i++) {
+    if (/^\d+$/.test(words[i])) { nameEndIdx = i; break; }
+    const lower = words[i].toLowerCase();
+    if (PRODUCT_ALIASES[lower] || config.products.includes(lower)) { nameEndIdx = i; break; }
+  }
+
+  if (nameEndIdx <= 0) return null; // no name found, or name starts with a product word
+
+  return {
+    customerIdentifier: words.slice(0, nameEndIdx).join(' '),
+    isPhone: false,
+    orderText: words.slice(nameEndIdx).join(' '),
+  };
+}
+
 // ── AI-assisted parser (OpenAI fallback) ────────────────────────
 
 export async function parseOrderWithAI(text: string): Promise<ParsedOrder> {
@@ -414,13 +592,20 @@ export async function parseOrderWithAI(text: string): Promise<ParsedOrder> {
 Extract quantities for each product. Available products: ${config.products.join(', ')}.
 Important synonyms — always map these to the canonical product name:
 - "texas toast", "texas" → toast
-- "four-inch hamburger bun", "four-inch bun", "bun", "four-inch" → 4-inch
-- "hot dog" → long
-- "sandwich", "sand rolls", "three-inch bun" → institutional_sandwich
+- "four-inch hamburger bun", "four-inch bun", "bun", "buns", "burger", "burgers", "hamburger", "hamburger bun", "hamburger buns", "four-inch" → 4-inch
+- "hot dog", "top split hotdog", "top split hot dog", "top split roll" → long
+- "sandwich", "sandwich roll", "sandwich rolls", "sand roll", "sand rolls", "three-inch bun" → institutional_sandwich
 - "dinner", "dinner rolls" → dinner_rolls
-Return ONLY valid JSON in this exact format: {"quantities": {"product_name": number}, "confident": true/false}
+- "hoagies", "sub", "subs", "sub roll", "sub rolls", "sausage roll", "sausage rolls" → hoagie
+- "top slice", "top slices" → top_slice
+- "marty no seeds", "marty no seed" → plain_marty
+- "plain marty" → plain_marty
+- "5 inch", "5in", "five inch", "five-inch", "5-in" → 5-inch
+If the customer is clearly declining, skipping, or not ordering (e.g. "no bread this week", "nothing for us", "we're good", "not until next week", "skip us", "closed today"), set "declined" to true and return empty quantities.
+Return ONLY valid JSON in this exact format: {"quantities": {"product_name": number}, "confident": true/false, "declined": false}
 Set confident to false if the message is ambiguous or doesn't clearly reference any products.
-If a product isn't mentioned, omit it (don't set it to 0).`;
+Set declined to true if the customer is clearly not placing an order this week.
+If a product isn't mentioned, omit it from quantities (don't set it to 0).`;
 
   try {
     const completion = await openai.chat.completions.create({
@@ -442,6 +627,7 @@ If a product isn't mentioned, omit it (don't set it to 0).`;
     return {
       quantities: parsed.quantities || {},
       confident: parsed.confident ?? false,
+      declined: parsed.declined ?? false,
     };
   } catch (err) {
     logger.error('AI order parsing failed', { error: err, input: text });
@@ -456,10 +642,25 @@ export async function parseOrder(text: string, defaultProduct?: string, productO
   const strict = parseOrderStrict(text, defaultProduct, productOrder);
   if (strict) {
     logger.info('Order parsed with strict parser', { result: strict });
+
+    // If digit tokens were left unpaired, the regex may have missed a product.
+    // Run AI as a supplement and merge in anything it finds that the regex didn't.
+    if (strict._hasOrphanedNumbers) {
+      logger.info('Orphaned numbers detected — running AI as supplement', { input: text });
+      const aiResult = await parseOrderWithAI(text);
+      for (const [product, qty] of Object.entries(aiResult.quantities)) {
+        if (!(product in strict.quantities) && qty > 0) {
+          strict.quantities[product] = qty;
+          logger.info('AI supplement added missed product', { product, qty });
+        }
+      }
+    }
+
+    delete strict._hasOrphanedNumbers;
     return strict;
   }
 
-  // Fall back to AI
+  // Fall back to AI entirely
   logger.info('Strict parser found no matches — falling back to AI', { input: text });
   return parseOrderWithAI(text);
 }

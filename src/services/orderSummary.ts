@@ -17,9 +17,11 @@ const PRODUCT_DISPLAY_NAMES: Record<string, string> = {
   'long': 'long',
   'institutional_sandwich': 'sandwich',
   'dinner_rolls': 'dinner rolls',
+  'hoagie': 'hoagie',
+  'top_slice': 'top slice',
 };
 
-function productDisplayName(product: string): string {
+export function productDisplayName(product: string): string {
   return PRODUCT_DISPLAY_NAMES[product] || product.replace(/_/g, ' ');
 }
 
