@@ -23,6 +23,8 @@ const CUSTOMER_PRODUCT_OVERRIDES: Record<string, Record<string, string>> = {
   'tilly': { 'long': 'top_slice' },
   // Deano's: hot dogs always map to top_slice
   'deano': { 'long': 'top_slice' },
+  // Joe: hot dogs / hot dog buns always map to top_slice
+  'joe': { 'long': 'top_slice' },
   // Thumbsuckers: hot dogs always map to top_slice
   'thumbsucker': { 'long': 'top_slice' },
 };
