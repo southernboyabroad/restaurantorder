@@ -890,8 +890,35 @@ export async function updateTodaysOrder(
     },
   });
 
+  // Push the corrected numbers downstream, the same way appendOrder does. Without
+  // this a correction only lands in the Orders tab: the route sheet and Daily Totals
+  // keep the old figure, and the sole re-sync is the 11:30 job, so anything corrected
+  // after that stays stale indefinitely. Non-fatal — the Orders tab is already
+  // updated, so a failure here must not fail the correction.
+  const route = row[3] || '';
+  const restaurantSheet = RESTAURANT_DATA_SHEETS[route];
+  if (restaurantSheet) {
+    try {
+      await updateRestaurantDataRow(
+        restaurantSheet.sheetId,
+        restaurantSheet.columns,
+        customerName,
+        dateStr,
+        mergedQuantities,
+      );
+    } catch (syncErr) {
+      logger.error('Failed to sync correction to Restaurant_Data sheet', {
+        error: syncErr,
+        customer: customerName,
+        route,
+      });
+    }
+  }
+  void updateDailySummaryTab(dateStr);
+
   logger.info(`Updated order for ${customerName} on ${dateStr}`, {
     mode,
+    route,
     previousQuantities,
     mergedQuantities,
   });

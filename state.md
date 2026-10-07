@@ -26,10 +26,6 @@ System is live and in production.
 
 ## Audit findings (2026-10-07) — still open
 Severity order. Each was verified by reading the executing code path.
-- Corrections after 11:30 never reach the route Restaurant_Data sheets or Daily Totals
-  (`sheets.ts:804-878`). `updateTodaysOrder` writes the Orders tab and the delivery tab
-  only; the sole re-sync is in `afternoonJob`. Fix: call `updateRestaurantDataRow` and
-  `updateDailySummaryTab` after a successful update.
 - Daily Totals drops any route that is not 25252 or 25248 — `SUMMARY_ROUTES` is
   hardcoded (`sheets.ts:589`), while the warehouse email groups by whatever routes
   exist, so the tab can undercount silently.
@@ -118,6 +114,14 @@ If something looks like it should be working but isn't — check Render first. M
   calendar day in both.
 - `/trigger-email?date=` now derives the delivery day from the date being sent rather
   than from today, so a late run no longer emails the right orders under the wrong day.
+- Corrections now sync downstream. `updateTodaysOrder` calls `updateRestaurantDataRow`
+  (route taken from the matched row's column D) and `updateDailySummaryTab` after
+  writing the Orders tab, matching what `appendOrder` already did. Previously a
+  correction reached only the Orders tab and the delivery tab, so the route sheet and
+  Daily Totals kept the old number — and since the only re-sync is the 11:30 job,
+  anything corrected after that stayed stale permanently. The Restaurant_Data write is
+  wrapped in try/catch: the Orders tab is already committed by that point, so a failure
+  there must not fail the correction.
 
 ## Last Updated
 2026-10-07
