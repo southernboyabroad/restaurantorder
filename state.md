@@ -37,6 +37,15 @@ System is live and in production.
   warnings and close the snapshot window above.
 - 4 pre-existing failures in `src/__tests__/orderParser.test.ts` (95 of 99 pass).
   Present before the recent parser changes; they involve the AI-fallback paths.
+- `render.yaml` is stale and needs a manual fix. `PRODUCTS` is declared with a managed
+  `value:` carrying leftover template data ("chicken,ribs,pulled_pork,brisket,
+  coleslaw,beans"). Because product reads are positional, re-applying the blueprint
+  would silently shift every product column. It should be changed to `sync: false` so
+  the Render dashboard stays the source of truth. The blueprint also omits
+  RESEND_API_KEY and RESEND_FROM_EMAIL (both `required()` in config.ts — the app
+  throws on boot without them) and SHEET_ID_25252 / SHEET_ID_25248 (absence silently
+  disables the Restaurant_Data sync); all four should be added as `sync: false`.
+  This does not affect the running service — only a blueprint create or re-sync.
 
 ## Recent Changes (continued)
 - Morning job now automatically syncs any pre-entered orders (e.g. manually entered called-in orders) to the route-specific Restaurant_Data sheets after the SMS blast runs. So if you enter an order the night before, it will land in the right spreadsheet when the 9:30 AM job fires the next morning.
