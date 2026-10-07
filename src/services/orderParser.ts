@@ -464,15 +464,18 @@ export interface CorrectionRequest {
   orderText: string;         // the portion describing new quantities
 }
 
-// Allow optional preamble before the keyword, e.g. "Oh crap, change ..." or "Hey, update ..."
-const CORRECTION_PREFIX = /^(.*?\b)?(change|update|fix|correct|add)\s+(that\s+)?/i;
+// change/update/fix/correct allow a preamble, e.g. "Oh crap, change ..." or "Hey, update ...".
+// "add" must start the message: a normal order such as "Please add 10 toast" would
+// otherwise be taken as a correction, and since corrections are handled before orders
+// are recorded, the order would never reach the Orders tab.
+const CORRECTION_PREFIX = /^(?:(.*?\b)?(change|update|fix|correct)|(add))\s+(that\s+)?/i;
 
 export function parseCorrectionRequest(text: string): CorrectionRequest | null {
   const trimmed = text.trim();
   const prefixMatch = trimmed.match(CORRECTION_PREFIX);
   if (!prefixMatch) return null;
 
-  const keyword = prefixMatch[2].toLowerCase();
+  const keyword = (prefixMatch[2] || prefixMatch[3]).toLowerCase();
   const afterKeyword = trimmed.replace(CORRECTION_PREFIX, '').trim();
   if (!afterKeyword) return null;
 
