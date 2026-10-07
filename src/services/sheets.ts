@@ -805,6 +805,7 @@ export async function updateTodaysOrder(
   customerName: string,
   dateStr: string,
   newQuantities: Record<string, number>,
+  mode: 'set' | 'add' = 'set',
 ): Promise<UpdateResult> {
   const sheets = getClient();
   const res = await sheets.spreadsheets.values.get({
@@ -837,10 +838,13 @@ export async function updateTodaysOrder(
   });
   const wasEmailed = (row[emailedCol] || '').toUpperCase() === 'Y';
 
-  // Merge: keep existing quantities, override with the new ones
+  // Merge: keep existing quantities, then either replace ("change toast to 15")
+  // or increment ("add 5 toast") the products named in the correction.
   const mergedQuantities: Record<string, number> = { ...previousQuantities };
   for (const [product, qty] of Object.entries(newQuantities)) {
-    mergedQuantities[product] = qty;
+    mergedQuantities[product] = mode === 'add'
+      ? (previousQuantities[product] || 0) + qty
+      : qty;
   }
 
   // Build cell updates
@@ -870,6 +874,7 @@ export async function updateTodaysOrder(
   });
 
   logger.info(`Updated order for ${customerName} on ${dateStr}`, {
+    mode,
     previousQuantities,
     mergedQuantities,
   });

@@ -462,6 +462,7 @@ export function isDeclineReply(text: string): boolean {
 export interface CorrectionRequest {
   customerNameHint?: string; // undefined = self-correction
   orderText: string;         // the portion describing new quantities
+  mode: 'set' | 'add';       // "change toast to 15" replaces; "add 5 toast" increments
 }
 
 // change/update/fix/correct allow a preamble, e.g. "Oh crap, change ..." or "Hey, update ...".
@@ -479,21 +480,25 @@ export function parseCorrectionRequest(text: string): CorrectionRequest | null {
   const afterKeyword = trimmed.replace(CORRECTION_PREFIX, '').trim();
   if (!afterKeyword) return null;
 
+  // "add 5 toast" means 5 on top of what is already recorded; every other
+  // keyword ("change toast to 15") means replace the recorded value.
+  const mode: 'set' | 'add' = keyword === 'add' ? 'add' : 'set';
+
   // "add" uses format: "add <qty> <product> to <customer name>"
   // e.g. "Add four 4 in to dad's bbq"
   if (keyword === 'add') {
     const addToMatch = afterKeyword.match(/^(.+?)\s+to\s+(.+)$/i);
     if (addToMatch) {
-      return { customerNameHint: addToMatch[2].trim(), orderText: addToMatch[1].trim() };
+      return { customerNameHint: addToMatch[2].trim(), orderText: addToMatch[1].trim(), mode };
     }
     // No "to <customer>" → self-correction: "add 4 toast"
-    return { orderText: afterKeyword };
+    return { orderText: afterKeyword, mode };
   }
 
   // Self-correction: "my order to ..." or "my toast to 15"
   const myMatch = afterKeyword.match(/^my\s+(order\s+to\s+)?(.+)$/i);
   if (myMatch) {
-    return { orderText: myMatch[2].trim() };
+    return { orderText: myMatch[2].trim(), mode };
   }
 
   // Admin correction: "<name>'s ..." — capture everything before the first possessive 's
@@ -503,19 +508,19 @@ export function parseCorrectionRequest(text: string): CorrectionRequest | null {
     const orderText = possessiveMatch[3].trim();
     // "my" isn't a customer name
     if (nameHint.toLowerCase() === 'my') {
-      return { orderText };
+      return { orderText, mode };
     }
-    return { customerNameHint: nameHint, orderText };
+    return { customerNameHint: nameHint, orderText, mode };
   }
 
   // "order to ..." (no name, no "my")
   const orderToMatch = afterKeyword.match(/^order\s+to\s+(.+)$/i);
   if (orderToMatch) {
-    return { orderText: orderToMatch[1].trim() };
+    return { orderText: orderToMatch[1].trim(), mode };
   }
 
   // Fallback — treat whole remaining text as self-correction
-  return { orderText: afterKeyword };
+  return { orderText: afterKeyword, mode };
 }
 
 // Preprocess correction text so "toast to 15" becomes "toast 15"

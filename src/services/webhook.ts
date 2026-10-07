@@ -116,7 +116,7 @@ async function handleCorrection(
   }
 
   // Update the existing order in the sheet
-  const result = await updateTodaysOrder(targetCustomer.name, dateStr, parsed!.quantities);
+  const result = await updateTodaysOrder(targetCustomer.name, dateStr, parsed!.quantities, correction.mode);
 
   if (!result.found) {
     await sendSms(from, `No order found today for ${targetCustomer.name}. They may not have ordered yet.`);

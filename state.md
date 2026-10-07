@@ -24,6 +24,33 @@ System is live and in production.
 - Manually entered orders in the Orders spreadsheet: leave the emailed column BLANK when entering by hand. If it has a Y, the 11:30 job will skip it. Use /trigger-email to send missed orders.
 - Render URL: https://restaurantorder-msop.onrender.com
 
+## Audit findings (2026-10-07) — still open
+Severity order. Each was verified by reading the executing code path.
+- `markOrdersAsEmailed(dateStr)` flags EVERY un-emailed row for the date, not the rows
+  that were actually in the email just sent (`webhook.ts:651`, `scheduler.ts:227`,
+  `webhook.ts:753`). A hand-entered order can be stamped `Y` by someone else's
+  late-order email and then never sent; `/trigger-email` afterwards reports
+  `no_unsent`, so it stays invisible. Fix: pass the emailed rows' keys in.
+- Evening admin texts get tomorrow's date (`webhook.ts:403`). The admin bypasses the
+  window check but has no Customers row, so the `else` branch uses
+  `new Date().toISOString().slice(0,10)` — UTC, i.e. tomorrow after 8 PM ET. The order
+  lands on a date no cron job processes. `easternDateStr` already exists in
+  `orderingWindow.ts:32`. Same UTC default in `/api/sync-delivery` (`index.ts:39`),
+  `/trigger-email` (`webhook.ts:722`) and `findNextOrderDate` (`sheets.ts:594`).
+- Corrections after 11:30 never reach the route Restaurant_Data sheets or Daily Totals
+  (`sheets.ts:804-878`). `updateTodaysOrder` writes the Orders tab and the delivery tab
+  only; the sole re-sync is in `afternoonJob`. Fix: call `updateRestaurantDataRow` and
+  `updateDailySummaryTab` after a successful update.
+- `/trigger-email?date=` honours the param for which orders to send but calls
+  `getDeliveryDate()` with no argument (`webhook.ts:722-723`), so a late run emails the
+  right orders under the wrong delivery day.
+- Daily Totals drops any route that is not 25252 or 25248 — `SUMMARY_ROUTES` is
+  hardcoded (`sheets.ts:589`), while the warehouse email groups by whatever routes
+  exist, so the tab can undercount silently.
+- Dead: `SENDGRID_API_KEY` / `SENDGRID_FROM_EMAIL` are unused (sending is Resend-only);
+  only `config.sendgrid.warehouseEmail` is still read. `architecture.md:11` still names
+  SendGrid. `generateSummary` / `generateSummariesByRoute` have no non-test callers.
+
 ## Known Issues / In Progress
 - `afternoonJob()` reads the Orders tab once at the start, then does one delivery-tab
   write per order before composing the email. With ~8 orders that is a 10-15 second
@@ -78,6 +105,19 @@ If something looks like it should be working but isn't — check Render first. M
   matched first and sent them to 4-inch).
 - Parser: a bare "tray"/"trays" with no leading count now means 1, so "Tray sliders"
   records 1 instead of being dropped.
+- Parser: "add" must now START a message to count as a correction. Previously
+  CORRECTION_PREFIX allowed any preamble before its keywords, so "Please add 10 toast"
+  matched on "add", went to the correction handler, and — because corrections run
+  before orders are recorded — never reached `appendOrder`. The customer got an error
+  reply and the restaurant was silently absent from the warehouse email.
+  change/update/fix/correct keep their preamble; "Add four 4 in to dad's bbq" is
+  unaffected.
+- Corrections now distinguish adding from setting. `CorrectionRequest` carries
+  `mode: 'set' | 'add'` and `updateTodaysOrder` takes it (defaulting to `'set'`).
+  "add 5 toast" on an existing 10 now gives 15; previously it overwrote to 5, cutting
+  the order while the confirmation SMS made it look deliberate. This applied to the
+  admin form too, so "Add four 4 in to dad's bbq" used to set rather than add.
+  "change ... to N" still replaces, exactly as before.
 
 ## Last Updated
 2026-10-07
