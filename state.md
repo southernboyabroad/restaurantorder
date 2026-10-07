@@ -25,7 +25,18 @@ System is live and in production.
 - Render URL: https://restaurantorder-msop.onrender.com
 
 ## Known Issues / In Progress
-- None currently noted
+- `afternoonJob()` reads the Orders tab once at the start, then does one delivery-tab
+  write per order before composing the email. With ~8 orders that is a 10-15 second
+  window in which a manual Orders-tab edit is made too late to reach the email, even
+  though the email has not sent yet. Fix is either to re-read the Orders tab just
+  before composing, or to drop the delivery-tab sync (see below).
+- The delivery spreadsheet (`DELIVERY_SHEET_ID`, the legacy "Restaurants 2026" file)
+  is no longer used by the owner, but every order still writes to it in real time and
+  the 11:30 job rewrites all of them. Its `DLVR` tabs have no SLIDER column, so every
+  run logs `Product column "SLIDER" not found`. Dropping this sync would remove the
+  warnings and close the snapshot window above.
+- 4 pre-existing failures in `src/__tests__/orderParser.test.ts` (95 of 99 pass).
+  Present before the recent parser changes; they involve the AI-fallback paths.
 
 ## Recent Changes (continued)
 - Morning job now automatically syncs any pre-entered orders (e.g. manually entered called-in orders) to the route-specific Restaurant_Data sheets after the SMS blast runs. So if you enter an order the night before, it will land in the right spreadsheet when the 9:30 AM job fires the next morning.
@@ -33,5 +44,31 @@ System is live and in production.
 ## Troubleshooting Reminder
 If something looks like it should be working but isn't — check Render first. Make sure the latest changes have actually been deployed: confirm that Render is running the correct branch and that the most recent commit is live. Many "mystery" bugs turn out to be Render still running an older version of the code.
 
+## Recent Changes (continued)
+- Added `slider` (customer-facing name "12 slice") as a product. Aliases: slider(s),
+  12 slice, 12-slice, 12slice, slider bun(s), slider roll(s). Column L on the 25252
+  Restaurant_Data sheet, column N on 25248.
+- IMPORTANT: `PRODUCTS` in Render must exactly match the Orders tab product columns.
+  Reads are positional (`sheets.ts:519-521`), so a mismatch silently shifts every
+  product. Current Orders tab layout is E-N: toast, 4-inch, long,
+  institutional_sandwich, dinner_rolls, hoagie, top_slice, marty, plain_marty, slider
+  (10 columns; Raw Reply in O, Emailed in P). The code default in `config.ts` still
+  lists 12 including 5-inch and potato_bread, so clearing the env var would break it.
+- Added a "Daily Totals" tab to the main spreadsheet: product totals by route, auto-
+  detects the next upcoming order date, uses the same friendly names as the warehouse
+  email. Updates on every order plus at 11:30. Manual trigger: `/api/daily-totals`.
+  It is derived from the Orders tab — editing it directly gets overwritten.
+- Blank/empty inbound SMS is now ignored instead of being treated as a decline.
+- Multi-location support: a customer with two locations on one phone number gets two
+  Customers rows sharing that number, each with a keyword in new column H ("Prefix").
+  Texting "main: 3 toast" routes to the row whose prefix matches, and the prefix is
+  stripped before parsing. With no prefix match it falls back to the first row and
+  logs a warning. The duplicate-order guard is now name-scoped rather than
+  phone-scoped so each location can order independently.
+- Parser: "hot dog bun(s)" and "hotdog bun(s)" now map to long (previously "buns"
+  matched first and sent them to 4-inch).
+- Parser: a bare "tray"/"trays" with no leading count now means 1, so "Tray sliders"
+  records 1 instead of being dropped.
+
 ## Last Updated
-2026-06-10
+2026-10-07
