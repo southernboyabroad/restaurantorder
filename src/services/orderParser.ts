@@ -198,7 +198,9 @@ export function parseOrderStrict(text: string, defaultProduct?: string, productO
   let cleaned = text.toLowerCase().replace(/_/g, ' ');
   // "a tray of toast" → "1 toast", "3 trays of toast" → "3 toast", "3 trays toast" → "3 toast"
   cleaned = cleaned.replace(/\ba\s+trays?\s+(of\s+)?/gi, '1 ');
-  cleaned = cleaned.replace(/\btrays?\s+(of\s+)?/gi, '');
+  cleaned = cleaned.replace(/(\d+)\s*trays?\s+(of\s+)?/gi, '$1 ');
+  // A bare "tray sliders" with no leading count means one tray
+  cleaned = cleaned.replace(/\btrays?\s+(of\s+)?/gi, '1 ');
   // "4- inch" or "4- in" → "4-inch" / "4-in" (space after hyphen in product names)
   cleaned = cleaned.replace(/(\d+)-\s+/g, '$1-');
   // "4 - inch" or "4 - in" → "4-inch" / "4-in" (spaces around hyphen in product names)
