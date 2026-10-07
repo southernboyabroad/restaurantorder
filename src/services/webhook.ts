@@ -614,7 +614,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     }
 
     // Record the order
-    await appendOrder({
+    const appendedRowNumber = await appendOrder({
       date: orderDateStr,
       phone: customer.phone,
       name: customer.name,
@@ -648,7 +648,9 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
           const textBody = formatOrderText(parsed.quantities, lateDayName);
           const htmlBody = formatOrderHtml(parsed.quantities, lateDayName);
           await sendWarehouseEmail(subject, textBody, htmlBody);
-          await markOrdersAsEmailed(orderDateStr);
+          // Only this order was in the email — marking the whole date would also
+          // stamp hand-entered rows that nobody has emailed yet.
+          await markOrdersAsEmailed(orderDateStr, [appendedRowNumber]);
           logger.info(`Late order email sent for ${customer.name} on route ${routeLabel}`);
         }
       } catch (lateEmailErr) {
@@ -750,7 +752,7 @@ webhookRouter.get('/trigger-email', async (req: Request, res: Response) => {
       logger.info(`Manual trigger: aggregated email sent for route ${routeLabel} (${summary.orderCount} orders)`);
     }
 
-    await markOrdersAsEmailed(dateStr);
+    await markOrdersAsEmailed(dateStr, unsent.map((o) => o.rowNumber));
 
     res.json({ status: 'sent', date: dateStr, deliveryDate: deliveryDateStr, emailsSent: emailCount });
   } catch (err: any) {

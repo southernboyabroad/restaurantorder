@@ -224,7 +224,9 @@ async function afternoonJob(): Promise<void> {
       logger.info(`Aggregated email sent for route ${routeLabel} (${summary.orderCount} orders)`);
     }
 
-    await markOrdersAsEmailed(dateStr);
+    // Mark only the rows this run covered — an order appended while the emails
+    // were being built is not in `unsent` and must stay un-emailed.
+    await markOrdersAsEmailed(dateStr, unsent.map((o) => o.rowNumber));
 
     // Re-sync all today's orders to route-specific Restaurant_Data sheets so
     // any manual edits made in the Orders tab after the morning sync are reflected.

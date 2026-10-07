@@ -178,6 +178,7 @@ export interface OrderRow {
   quantities: Record<string, number>; // product → qty
   rawReply: string;
   emailed: boolean; // true if this order was already included in a warehouse email
+  rowNumber: number; // 1-based row in the Orders sheet, used to mark exactly this row as emailed
 }
 
 let sheetsClient: sheets_v4.Sheets | null = null;
@@ -440,7 +441,7 @@ async function applyOrderRowColors(
   });
 }
 
-export async function appendOrder(order: OrderRow): Promise<void> {
+export async function appendOrder(order: Omit<OrderRow, 'rowNumber'>): Promise<number> {
   const sheets = getClient();
   const row = [
     order.date,
@@ -451,12 +452,16 @@ export async function appendOrder(order: OrderRow): Promise<void> {
     order.rawReply,
   ];
 
-  await sheets.spreadsheets.values.append({
+  const appendRes = await sheets.spreadsheets.values.append({
     spreadsheetId: config.google.sheetId,
     range: 'Orders!A:A',
     valueInputOption: 'RAW',
     requestBody: { values: [row] },
   });
+
+  // "Orders!A662:P662" → 662, so callers can mark exactly this row as emailed
+  const updatedRange = appendRes.data.updates?.updatedRange || '';
+  const appendedRowNumber = parseInt(updatedRange.match(/![A-Z]+(\d+)/i)?.[1] || '0', 10) || 0;
 
   // Apply alternating row color — all rows for the same date get the same color,
   // switching to the other color each new date.
@@ -497,7 +502,8 @@ export async function appendOrder(order: OrderRow): Promise<void> {
   // Update the Daily Totals summary tab (fire-and-forget — non-fatal)
   void updateDailySummaryTab(order.date);
 
-  logger.info(`Order recorded for ${order.name} (${order.phone})`);
+  logger.info(`Order recorded for ${order.name} (${order.phone})`, { row: appendedRowNumber });
+  return appendedRowNumber;
 }
 
 // ── Read today's orders ─────────────────────────────────────────
@@ -513,11 +519,12 @@ export async function getTodaysOrders(dateStr: string): Promise<OrderRow[]> {
   const orders: OrderRow[] = [];
   const emailedCol = 4 + config.products.length + 1; // after Raw Reply
 
-  for (const row of rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     if (row[0] !== dateStr) continue;
     const quantities: Record<string, number> = {};
-    config.products.forEach((p, i) => {
-      quantities[p] = parseInt(row[4 + i] || '0', 10) || 0;
+    config.products.forEach((p, idx) => {
+      quantities[p] = parseInt(row[4 + idx] || '0', 10) || 0;
     });
     orders.push({
       date: row[0],
@@ -527,6 +534,7 @@ export async function getTodaysOrders(dateStr: string): Promise<OrderRow[]> {
       quantities,
       rawReply: row[4 + config.products.length] || '',
       emailed: (row[emailedCol] || '').toUpperCase() === 'Y',
+      rowNumber: i + 2, // +2: row 1 is headers and the read starts at A2
     });
   }
 
@@ -543,7 +551,7 @@ export async function hasBatchBeenSent(dateStr: string): Promise<boolean> {
 
 // ── Mark all of today's un-emailed orders as emailed ──────────
 
-export async function markOrdersAsEmailed(dateStr: string): Promise<void> {
+export async function markOrdersAsEmailed(dateStr: string, rowNumbers?: number[]): Promise<void> {
   const sheets = getClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: config.google.sheetId,
@@ -555,12 +563,18 @@ export async function markOrdersAsEmailed(dateStr: string): Promise<void> {
   const emailedColLetter = columnLetter(emailedCol); // spreadsheet column letter
 
   const updates: { range: string; values: string[][] }[] = [];
+  // When the caller names the rows it actually emailed, mark only those. Marking
+  // every un-emailed row for the date would also stamp orders that arrived while
+  // the email was being built, and hand-entered rows the email never covered —
+  // they would then be skipped forever, including by /trigger-email.
+  const only = rowNumbers ? new Set(rowNumbers) : null;
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     if (row[0] !== dateStr) continue;
     if ((row[emailedCol] || '').toUpperCase() === 'Y') continue; // already marked
     const sheetRow = i + 2; // +2 because row 1 is headers, and i is 0-indexed
+    if (only && !only.has(sheetRow)) continue;
     updates.push({
       range: `Orders!${emailedColLetter}${sheetRow}`,
       values: [['Y']],
@@ -690,12 +704,13 @@ export async function getLastOrderForCustomer(phone: string): Promise<OrderRow |
   const rows = res.data.values || [];
   let lastOrder: OrderRow | null = null;
 
-  for (const row of rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     if (normalizePhone(row[1] || '') !== normalized) continue;
     const quantities: Record<string, number> = {};
     let hasItems = false;
-    config.products.forEach((p, i) => {
-      const qty = parseInt(row[4 + i] || '0', 10) || 0;
+    config.products.forEach((p, idx) => {
+      const qty = parseInt(row[4 + idx] || '0', 10) || 0;
       quantities[p] = qty;
       if (qty > 0) hasItems = true;
     });
@@ -709,6 +724,7 @@ export async function getLastOrderForCustomer(phone: string): Promise<OrderRow |
       quantities,
       rawReply: row[4 + config.products.length] || '',
       emailed: (row[emailedCol] || '').toUpperCase() === 'Y',
+      rowNumber: i + 2,
     };
   }
 
