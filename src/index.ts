@@ -4,6 +4,7 @@ import { webhookRouter } from './services/webhook';
 import { startScheduler, reminderJob } from './services/scheduler';
 import { getTodaysOrders, updateDailySummaryTab } from './services/sheets';
 import { updateDeliveryTabOrder } from './services/deliveryTab';
+import { easternDateStr } from './services/orderingWindow';
 import logger from './logger';
 
 const app = express();
@@ -36,7 +37,7 @@ app.get('/api/remind', async (_req, res) => {
 // the normal SMS → delivery-tab flow.
 app.get('/api/sync-delivery', async (_req, res) => {
   try {
-    const dateStr = new Date().toISOString().slice(0, 10);
+    const dateStr = easternDateStr();
     const orders = await getTodaysOrders(dateStr);
 
     if (orders.length === 0) {

@@ -7,7 +7,7 @@ import { sendSms, forwardToAdmin } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
 import { formatOrderText, formatOrderHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
 import { sendWarehouseEmail } from './email';
-import { isInsideOrderingWindow, isEarlyOrderWindow, getNextOrderingDate } from './orderingWindow';
+import { isInsideOrderingWindow, isEarlyOrderWindow, getNextOrderingDate, easternDateStr } from './orderingWindow';
 import logger from '../logger';
 
 // ── Per-customer product overrides (code-defined) ────────────────
@@ -63,7 +63,7 @@ async function handleCorrection(
   res: import('express').Response,
   orderDateStr?: string,
 ): Promise<void> {
-  const dateStr = orderDateStr || new Date().toISOString().slice(0, 10);
+  const dateStr = orderDateStr || easternDateStr();
 
   let targetCustomer: Customer;
 
@@ -400,7 +400,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       orderDayOfWeek = next.dayOfWeek;
       logger.info('Early order detected', { from, name: customer.name, orderDate: orderDateStr, orderDay: DAY_NAMES[orderDayOfWeek] });
     } else {
-      orderDateStr = new Date().toISOString().slice(0, 10);
+      orderDateStr = easternDateStr();
       orderDayOfWeek = new Date().getDay();
     }
 
@@ -721,8 +721,10 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
 // same as the 11:30 AM scheduler job.
 webhookRouter.get('/trigger-email', async (req: Request, res: Response) => {
   try {
-    const dateStr = (req.query.date as string) || new Date().toISOString().slice(0, 10);
-    const delivery = getDeliveryDate();
+    const dateStr = (req.query.date as string) || easternDateStr();
+    // Derive the delivery day from the orders being sent, not from today — running
+    // this a day late would otherwise email the right orders under the wrong day.
+    const delivery = getDeliveryDate(new Date(`${dateStr}T12:00:00`));
     const deliveryDateStr = formatDeliveryDate(delivery);
     const dayName = deliveryDayName(delivery);
 

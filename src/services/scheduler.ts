@@ -5,11 +5,12 @@ import { formatSummaryText, formatSummaryHtml, getDeliveryDate, formatDeliveryDa
 import { sendWarehouseEmail } from './email';
 import { ensureOrdersSheet } from './sheets';
 import { ensureDeliveryTab, updateDeliveryTabOrder } from './deliveryTab';
+import { easternDateStr } from './orderingWindow';
 import { config } from '../config';
 import logger from '../logger';
 
 function todayDateStr(): string {
-  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  return easternDateStr(); // YYYY-MM-DD in Eastern time, matching the cron schedule
 }
 
 // ── 9:30 AM ET — Wed, Fri, Sat — send order prompts ─────────────

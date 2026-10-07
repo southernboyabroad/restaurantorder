@@ -1,6 +1,7 @@
 import { google, sheets_v4 } from 'googleapis';
 import { config } from '../config';
 import { productDisplayName } from './orderSummary';
+import { easternDateStr } from './orderingWindow';
 import logger from '../logger';
 
 // ── Sheet layout ────────────────────────────────────────────────
@@ -605,7 +606,7 @@ const SUMMARY_ROUTES = ['25252', '25248'];
 // Find the earliest upcoming order date in the Orders sheet (today or future).
 // Falls back to today if nothing is found.
 async function findNextOrderDate(): Promise<string> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = easternDateStr();
   try {
     const sheets = getClient();
     const res = await sheets.spreadsheets.values.get({

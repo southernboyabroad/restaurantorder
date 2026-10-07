@@ -26,24 +26,10 @@ System is live and in production.
 
 ## Audit findings (2026-10-07) — still open
 Severity order. Each was verified by reading the executing code path.
-- `markOrdersAsEmailed(dateStr)` flags EVERY un-emailed row for the date, not the rows
-  that were actually in the email just sent (`webhook.ts:651`, `scheduler.ts:227`,
-  `webhook.ts:753`). A hand-entered order can be stamped `Y` by someone else's
-  late-order email and then never sent; `/trigger-email` afterwards reports
-  `no_unsent`, so it stays invisible. Fix: pass the emailed rows' keys in.
-- Evening admin texts get tomorrow's date (`webhook.ts:403`). The admin bypasses the
-  window check but has no Customers row, so the `else` branch uses
-  `new Date().toISOString().slice(0,10)` — UTC, i.e. tomorrow after 8 PM ET. The order
-  lands on a date no cron job processes. `easternDateStr` already exists in
-  `orderingWindow.ts:32`. Same UTC default in `/api/sync-delivery` (`index.ts:39`),
-  `/trigger-email` (`webhook.ts:722`) and `findNextOrderDate` (`sheets.ts:594`).
 - Corrections after 11:30 never reach the route Restaurant_Data sheets or Daily Totals
   (`sheets.ts:804-878`). `updateTodaysOrder` writes the Orders tab and the delivery tab
   only; the sole re-sync is in `afternoonJob`. Fix: call `updateRestaurantDataRow` and
   `updateDailySummaryTab` after a successful update.
-- `/trigger-email?date=` honours the param for which orders to send but calls
-  `getDeliveryDate()` with no argument (`webhook.ts:722-723`), so a late run emails the
-  right orders under the wrong delivery day.
 - Daily Totals drops any route that is not 25252 or 25248 — `SUMMARY_ROUTES` is
   hardcoded (`sheets.ts:589`), while the warehouse email groups by whatever routes
   exist, so the tab can undercount silently.
@@ -118,6 +104,20 @@ If something looks like it should be working but isn't — check Render first. M
   the order while the confirmation SMS made it look deliberate. This applied to the
   admin form too, so "Add four 4 in to dad's bbq" used to set rather than add.
   "change ... to N" still replaces, exactly as before.
+- Emails now mark only the rows they actually covered. `OrderRow` carries `rowNumber`,
+  `appendOrder` returns the row it wrote, and `markOrdersAsEmailed` takes an optional
+  list of rows. Previously it stamped every un-emailed row for the date, so a
+  hand-entered called-in order could be marked sent by someone else's late-order email
+  and never reach the warehouse — `/trigger-email` would then report `no_unsent`.
+- All order dates now use `easternDateStr()` (exported from `orderingWindow.ts`)
+  instead of `toISOString().slice(0,10)`. The UTC form returns TOMORROW after 8 PM ET,
+  so an order texted in during the evening landed on a date no cron job reads. Changed
+  in `webhook.ts` (order date, correction fallback, `/trigger-email` default),
+  `scheduler.ts` (`todayDateStr`), `sheets.ts` (`findNextOrderDate`) and `index.ts`
+  (`/api/sync-delivery`). Cron-time behaviour is unchanged — 9:30-11:30 ET is the same
+  calendar day in both.
+- `/trigger-email?date=` now derives the delivery day from the date being sent rather
+  than from today, so a late run no longer emails the right orders under the wrong day.
 
 ## Last Updated
 2026-10-07
