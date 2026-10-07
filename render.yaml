@@ -29,12 +29,25 @@ services:
         sync: false
       - key: DELIVERY_SHEET_ID
         sync: false
+      - key: SHEET_ID_25252
+        sync: false
+      - key: SHEET_ID_25248
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: ADMIN_PHONE_NUMBER
         sync: false
+      # PRODUCTS must list the Orders tab's product columns in sheet order —
+      # reads are positional, so a mismatch shifts every product silently.
+      # Current Orders tab layout (columns E-N):
+      #   toast,4-inch,long,institutional_sandwich,dinner_rolls,hoagie,top_slice,marty,plain_marty,slider
+      # Left unmanaged so a blueprint re-apply can never overwrite the live value.
       - key: PRODUCTS
-        value: "chicken,ribs,pulled_pork,brisket,coleslaw,beans"
+        sync: false
       - key: LOG_LEVEL
         value: info
       - key: SCHEDULER_ENABLED
