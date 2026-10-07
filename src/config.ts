@@ -30,12 +30,19 @@ export const config = {
     serviceAccountKeyBase64: required('GOOGLE_SERVICE_ACCOUNT_KEY_BASE64'),
     sheetId: required('GOOGLE_SHEET_ID'),
     deliverySheetId: required('DELIVERY_SHEET_ID'),
+    sheetId25252: optional('SHEET_ID_25252', ''),
+    sheetId25248: optional('SHEET_ID_25248', ''),
   },
 
   sendgrid: {
-    apiKey: required('SENDGRID_API_KEY'),
-    fromEmail: required('SENDGRID_FROM_EMAIL'),
+    apiKey: optional('SENDGRID_API_KEY', ''),
+    fromEmail: optional('SENDGRID_FROM_EMAIL', ''),
     warehouseEmail: required('WAREHOUSE_EMAIL'),
+  },
+
+  resend: {
+    apiKey: required('RESEND_API_KEY'),
+    fromEmail: required('RESEND_FROM_EMAIL'),
   },
 
   openai: {
@@ -44,7 +51,7 @@ export const config = {
 
   emailSignOffName: optional('EMAIL_SIGN_OFF_NAME', 'Bryant'),
 
-  products: optional('PRODUCTS', 'toast,4-inch,long,institutional_sandwich,dinner_rolls')
+  products: optional('PRODUCTS', 'toast,4-inch,long,institutional_sandwich,dinner_rolls,hoagie,top_slice,marty,plain_marty,5-inch,potato_bread,slider')
     .split(',')
     .map((p) => p.trim().toLowerCase()),
 } as const;

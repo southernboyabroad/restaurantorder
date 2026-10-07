@@ -29,7 +29,10 @@ function getEasternComponents(d: Date): { dayOfWeek: number; currentMinutes: num
   return { dayOfWeek: easternDate.getDay(), currentMinutes: hour * 60 + minute };
 }
 
-function easternDateStr(d: Date): string {
+// YYYY-MM-DD for the Eastern calendar day. Everything keyed on an order date must
+// use this: toISOString() is UTC, so after 8 PM ET it returns tomorrow and the row
+// lands on a date no scheduled job ever reads.
+export function easternDateStr(d: Date = new Date()): string {
   return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 }
 
