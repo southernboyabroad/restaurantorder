@@ -87,6 +87,18 @@ const PRODUCT_ALIASES: Record<string, string> = {
   'sub rolls': 'hoagie',
   'sausage roll': 'hoagie',
   'sausage rolls': 'hoagie',
+  'philly': 'hoagie',
+  'phillies': 'hoagie',
+  'phillys': 'hoagie',
+  'philly roll': 'hoagie',
+  'philly rolls': 'hoagie',
+  'philly bun': 'hoagie',
+  'philly buns': 'hoagie',
+  'philadelphia': 'hoagie',
+  'cheesesteak': 'hoagie',
+  'cheesesteaks': 'hoagie',
+  'cheese steak': 'hoagie',
+  'cheese steaks': 'hoagie',
   'top_slice': 'top_slice',
   'top slice': 'top_slice',
   'top slices': 'top_slice',
@@ -118,11 +130,18 @@ const PRODUCT_ALIASES: Record<string, string> = {
   'sandwich bread': 'potato_bread',
   'slice bread': 'potato_bread',
   'sliced bread': 'potato_bread',
+  // "slider" and "12 slice" are the same product. Customers say slider;
+  // 12 slice is the internal/warehouse name.
   'slider': 'slider',
   'sliders': 'slider',
   '12 slice': 'slider',
+  '12 slices': 'slider',
   '12-slice': 'slider',
+  '12-slices': 'slider',
   '12slice': 'slider',
+  '12slices': 'slider',
+  '12 slice bun': 'slider',
+  '12 slice buns': 'slider',
   'slider bun': 'slider',
   'slider buns': 'slider',
   'slider roll': 'slider',
@@ -606,7 +625,8 @@ Important synonyms — always map these to the canonical product name:
 - "hot dog", "top split hotdog", "top split hot dog", "top split roll" → long
 - "sandwich", "sandwich roll", "sandwich rolls", "sand roll", "sand rolls", "three-inch bun" → institutional_sandwich
 - "dinner", "dinner rolls" → dinner_rolls
-- "hoagies", "sub", "subs", "sub roll", "sub rolls", "sausage roll", "sausage rolls" → hoagie
+- "hoagies", "sub", "subs", "sub roll", "sub rolls", "sausage roll", "sausage rolls", "philly", "phillies", "philly roll", "philly rolls", "cheesesteak", "cheese steak" → hoagie
+- "slider", "sliders", "slider bun", "slider buns", "slider roll", "slider rolls", "12 slice", "12-slice", "12 slices" → slider
 - "top slice", "top slices" → top_slice
 - "marty no seeds", "marty no seed" → plain_marty
 - "plain marty" → plain_marty
