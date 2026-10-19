@@ -26,6 +26,35 @@ System is live and in production.
 
 ## Audit findings (2026-10-07) — still open
 Severity order. Each was verified by reading the executing code path.
+- Google Sheets rate limit drops orders. The limit is 60 reads/minute/user. The 9:30
+  job (create delivery tab, load customers, read orders, 18 SMS, then 18 sequential
+  Message Log writes that each read first) exhausts it, so a customer replying inside
+  that first minute gets a 429: the webhook throws, the order is NOT recorded, and the
+  customer gets no reply. Hit JNN Oxford and JNN Newnan on 2026-10-14 — they are the
+  fastest responders, which is the whole exposure. Invisible unless someone reads the
+  Render log. Fix: cache getCustomers (re-read on nearly every inbound SMS, changes
+  weekly), retry on 429 instead of dropping, and batch the post-blast Message Log
+  writes.
+- `appendOrder` can overwrite a row being hand-typed. `spreadsheets.values.append`
+  defaults to `insertDataOption: OVERWRITE`, which writes into the cells after the last
+  populated row. On 2026-10-14 an order appended to row 912 while the owner was pasting
+  a different order into that same row; the paste won and the appended order was lost.
+  Fix: pass `insertDataOption: 'INSERT_ROWS'` so the append inserts its own row and can
+  never land on cells someone is editing.
+- Orders texted between 12:30 and 1:00 PM are recorded but never emailed.
+  `isLateOrderEmailWindow` (`webhook.ts`) runs 11:30-12:30, but the ordering window
+  stays open until 1:00 (`WINDOW_CLOSE_MINUTES`). An order in that half hour reaches
+  the Orders tab, Restaurant_Data and the delivery tab, and the customer gets a
+  confirmation — but no email goes to the warehouse, the Emailed column stays blank,
+  and nothing retries. Fix: extend the late-email window to 1:00 to match, or flag
+  orders left recorded-but-un-emailed once the window closes.
+- Hand-entered orders only reach the delivery spreadsheet if entered before 11:30.
+  Nothing writes to the delivery tab at entry time (no webhook runs); the only sweep is
+  `afternoonJob`'s per-order sync at 11:30. Anything typed in after that is absent from
+  Restaurants 2026, which the owner uses as the per-date history of what each
+  restaurant ordered. `/api/sync-delivery` fixes it manually but must be remembered,
+  and it derives the delivery date from today rather than from the order, so it writes
+  into the wrong DLVR tab if run on a later day.
 - Daily Totals drops any route that is not 25252 or 25248 — `SUMMARY_ROUTES` is
   hardcoded (`sheets.ts:589`), while the warehouse email groups by whatever routes
   exist, so the tab can undercount silently.
