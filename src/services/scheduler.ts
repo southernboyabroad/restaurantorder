@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { getCustomers, getTodaysOrders, markOrdersAsEmailed, syncOrdersToRestaurantDataSheets, logMessage, updateDailySummaryTab } from './sheets';
+import { getCustomers, getTodaysOrders, markOrdersAsEmailed, syncOrdersToRestaurantDataSheets, logMessages, updateDailySummaryTab } from './sheets';
 import { sendSms, buildOrderPromptMessage } from './sms';
 import { formatSummaryText, formatSummaryHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName, groupOrdersByRoute } from './orderSummary';
 import { sendWarehouseEmail } from './email';
@@ -99,10 +99,17 @@ async function morningJob(): Promise<void> {
       const failed = results.filter((r) => r.status === 'rejected').length;
       logger.info(`Morning SMS blast complete: ${succeeded} sent, ${failed} failed`);
 
-      // Log sequentially after the blast to avoid concurrent Sheets write conflicts
-      for (const { customer, message } of toSend) {
-        await logMessage('OUT', customer.name, customer.phone, message);
-      }
+      // One batched write. Logging these individually cost three API calls each,
+      // which exhausted the 60-reads-per-minute quota and made the orders of
+      // whoever replied first fail with a 429.
+      await logMessages(
+        toSend.map(({ customer, message }) => ({
+          direction: 'OUT' as const,
+          customerName: customer.name,
+          customerPhone: customer.phone,
+          message,
+        })),
+      );
     }
 
     // Sync any pre-entered orders (e.g. called-in orders entered manually) to
@@ -166,9 +173,14 @@ async function reminderJob(): Promise<void> {
       const failed = results.filter((r) => r.status === 'rejected').length;
       logger.info(`Reminder SMS complete: ${succeeded} sent, ${failed} failed`);
 
-      for (const c of needsReminder) {
-        await logMessage('OUT', c.name, c.phone, 'Reminder');
-      }
+      await logMessages(
+        needsReminder.map((c) => ({
+          direction: 'OUT' as const,
+          customerName: c.name,
+          customerPhone: c.phone,
+          message: 'Reminder',
+        })),
+      );
     }
   } catch (err) {
     logger.error('Reminder job failed', { error: err });

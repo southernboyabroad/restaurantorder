@@ -99,10 +99,63 @@ const ABBREV_TO_PRODUCT: Record<string, string> = {
   'slider rolls': 'slider',
 };
 
+// ── Sheet metadata cache ────────────────────────────────────────
+// Google allows 60 read requests per minute per user. A full
+// spreadsheets.get just to resolve a tab's numeric id was being issued on
+// every logMessage, every order and every Daily Totals rebuild — roughly
+// 54 of the 60 reads in the minute after the 9:30 blast, which is what
+// made the fastest-replying customers' orders fail with a 429.
+//
+// Tab ids are stable for the life of the spreadsheet, so one lookup is
+// enough. A miss refreshes the whole map, so a tab created later is picked
+// up without a restart.
+
+const sheetIdCache = new Map<string, number>();
+
+async function getSheetIdByTitle(
+  sheets: sheets_v4.Sheets,
+  title: string,
+): Promise<number | null> {
+  const cached = sheetIdCache.get(title);
+  if (cached !== undefined) return cached;
+
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: config.google.sheetId });
+  for (const s of meta.data.sheets || []) {
+    const name = s.properties?.title;
+    const id = s.properties?.sheetId;
+    if (name && id !== null && id !== undefined) sheetIdCache.set(name, id);
+  }
+  return sheetIdCache.get(title) ?? null;
+}
+
+// Called after creating a tab so the next lookup sees it.
+function forgetSheetIdCache(): void {
+  sheetIdCache.clear();
+}
+
+// ── Customer cache ──────────────────────────────────────────────
+// getCustomers runs on essentially every inbound SMS, sometimes twice,
+// while the Customers tab changes about once a week. A short TTL keeps
+// edits picked up quickly without spending a read per message.
+
+const CUSTOMER_CACHE_TTL_MS = 60_000;
+let customerCache: { at: number; customers: Customer[] } | null = null;
+
+export function invalidateCustomerCache(): void {
+  customerCache = null;
+}
+
 // ── Message Log ─────────────────────────────────────────────────
 // Appends one row to the "Message Log" tab in the main spreadsheet.
 // Columns: Date | Time | Customer | Phone | Direction | Message
 // Auto-creates the sheet with a header row if it doesn't exist yet.
+
+export interface LogEntry {
+  direction: 'IN' | 'OUT';
+  customerName: string;
+  customerPhone: string;
+  message: string;
+}
 
 export async function logMessage(
   direction: 'IN' | 'OUT',
@@ -110,16 +163,23 @@ export async function logMessage(
   customerPhone: string,
   message: string,
 ): Promise<void> {
+  return logMessages([{ direction, customerName, customerPhone, message }]);
+}
+
+// Writing one row at a time cost three API calls each. The 9:30 blast logs a
+// row per customer, so 18 customers meant 54 calls in the same minute the
+// quota is tightest. Batching makes it three calls regardless of how many.
+export async function logMessages(entries: LogEntry[]): Promise<void> {
+  if (entries.length === 0) return;
   try {
     const sheets = getClient();
     const now = new Date();
     const date = now.toLocaleDateString('en-US', { timeZone: 'America/New_York' });
     const time = now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit' });
 
-    // Ensure the sheet exists
-    const meta = await sheets.spreadsheets.get({ spreadsheetId: config.google.sheetId });
-    const exists = (meta.data.sheets || []).some((s) => s.properties?.title === 'Message Log');
-    if (!exists) {
+    // Ensure the sheet exists (cached — one metadata read for the process)
+    let logSheetId = await getSheetIdByTitle(sheets, 'Message Log');
+    if (logSheetId === null) {
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId: config.google.sheetId,
         requestBody: {
@@ -132,19 +192,22 @@ export async function logMessage(
         valueInputOption: 'RAW',
         requestBody: { values: [['Date', 'Time', 'Customer', 'Phone', 'Direction', 'Message']] },
       });
+      forgetSheetIdCache();
+      logSheetId = await getSheetIdByTitle(sheets, 'Message Log');
     }
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: config.google.sheetId,
       range: 'Message Log!A:A',
       valueInputOption: 'RAW',
-      requestBody: { values: [[date, time, customerName, customerPhone, direction, message]] },
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: {
+        values: entries.map((e) => [date, time, e.customerName, e.customerPhone, e.direction, e.message]),
+      },
     });
 
-    // Apply alternating row color by date
-    const logMeta = await sheets.spreadsheets.get({ spreadsheetId: config.google.sheetId });
-    const logSheet = (logMeta.data.sheets || []).find((s) => s.properties?.title === 'Message Log');
-    const logSheetId = logSheet?.properties?.sheetId ?? null;
+    // Apply alternating row color by date. Read after appending, so rows.length
+    // is the index just past the last new row.
     if (logSheetId !== null) {
       const existing = await sheets.spreadsheets.values.get({
         spreadsheetId: config.google.sheetId,
@@ -155,14 +218,17 @@ export async function logMessage(
         rows.map((r: string[]) => r[0]).filter((d: string) => d && d !== date)
       );
       const colorIndex = priorDates.size % 2;
-      const newRowIndex = rows.length;
+      // A2:A returning M values means sheet rows 2..M+1, i.e. 0-based indices
+      // 1..M. The rows just appended are the last `entries.length` of those.
+      const endRowIndex = rows.length + 1;
+      const startRowIndex = Math.max(1, endRowIndex - entries.length);
       const color = ORDER_ROW_COLORS[colorIndex];
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId: config.google.sheetId,
         requestBody: {
           requests: [{
             repeatCell: {
-              range: { sheetId: logSheetId, startRowIndex: newRowIndex, endRowIndex: newRowIndex + 1 },
+              range: { sheetId: logSheetId, startRowIndex, endRowIndex },
               cell: { userEnteredFormat: { backgroundColor: color } },
               fields: 'userEnteredFormat.backgroundColor',
             },
@@ -228,6 +294,10 @@ export function getSheetsClient(): sheets_v4.Sheets {
 // ── Read customers ──────────────────────────────────────────────
 
 export async function getCustomers(): Promise<Customer[]> {
+  if (customerCache && Date.now() - customerCache.at < CUSTOMER_CACHE_TTL_MS) {
+    return customerCache.customers;
+  }
+
   const sheets = getClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: config.google.sheetId,
@@ -262,6 +332,7 @@ export async function getCustomers(): Promise<Customer[]> {
       prefix: row[7]?.trim().toLowerCase() || undefined,
     }));
 
+  customerCache = { at: Date.now(), customers };
   logger.info(`Loaded ${customers.length} customers from Sheets`);
   return customers;
 }
@@ -432,9 +503,7 @@ const ORDER_ROW_COLORS = [
 ];
 
 async function getOrdersSheetNumericId(sheets: sheets_v4.Sheets): Promise<number | null> {
-  const meta = await sheets.spreadsheets.get({ spreadsheetId: config.google.sheetId });
-  const sheet = (meta.data.sheets || []).find((s) => s.properties?.title === 'Orders');
-  return sheet?.properties?.sheetId ?? null;
+  return getSheetIdByTitle(sheets, 'Orders');
 }
 
 async function applyOrderRowColors(
@@ -477,6 +546,11 @@ export async function appendOrder(order: Omit<OrderRow, 'rowNumber'>): Promise<n
     spreadsheetId: config.google.sheetId,
     range: 'Orders!A:A',
     valueInputOption: 'RAW',
+    // INSERT_ROWS, not the OVERWRITE default: overwrite writes into the cells
+    // after the last populated row, so an order arriving while someone is
+    // typing into that row lands on top of their entry and one of the two is
+    // lost. Inserting gives the order its own row and cannot collide.
+    insertDataOption: 'INSERT_ROWS',
     requestBody: { values: [row] },
   });
 
@@ -647,14 +721,14 @@ export async function updateDailySummaryTab(dateStr?: string): Promise<void> {
     const date = dateStr ?? await findNextOrderDate();
     const orders = await getTodaysOrders(date);
 
-    // Ensure the sheet exists
-    const meta = await sheets.spreadsheets.get({ spreadsheetId: config.google.sheetId });
-    const exists = (meta.data.sheets || []).some((s) => s.properties?.title === DAILY_TOTALS_SHEET);
-    if (!exists) {
+    // Ensure the sheet exists (cached — one metadata read for the process)
+    const totalsSheetId = await getSheetIdByTitle(sheets, DAILY_TOTALS_SHEET);
+    if (totalsSheetId === null) {
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId: config.google.sheetId,
         requestBody: { requests: [{ addSheet: { properties: { title: DAILY_TOTALS_SHEET } } }] },
       });
+      forgetSheetIdCache();
     }
 
     // Sum quantities per product per route

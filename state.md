@@ -26,21 +26,6 @@ System is live and in production.
 
 ## Audit findings (2026-10-07) — still open
 Severity order. Each was verified by reading the executing code path.
-- Google Sheets rate limit drops orders. The limit is 60 reads/minute/user. The 9:30
-  job (create delivery tab, load customers, read orders, 18 SMS, then 18 sequential
-  Message Log writes that each read first) exhausts it, so a customer replying inside
-  that first minute gets a 429: the webhook throws, the order is NOT recorded, and the
-  customer gets no reply. Hit JNN Oxford and JNN Newnan on 2026-10-14 — they are the
-  fastest responders, which is the whole exposure. Invisible unless someone reads the
-  Render log. Fix: cache getCustomers (re-read on nearly every inbound SMS, changes
-  weekly), retry on 429 instead of dropping, and batch the post-blast Message Log
-  writes.
-- `appendOrder` can overwrite a row being hand-typed. `spreadsheets.values.append`
-  defaults to `insertDataOption: OVERWRITE`, which writes into the cells after the last
-  populated row. On 2026-10-14 an order appended to row 912 while the owner was pasting
-  a different order into that same row; the paste won and the appended order was lost.
-  Fix: pass `insertDataOption: 'INSERT_ROWS'` so the append inserts its own row and can
-  never land on cells someone is editing.
 - Orders texted between 12:30 and 1:00 PM are recorded but never emailed.
   `isLateOrderEmailWindow` (`webhook.ts`) runs 11:30-12:30, but the ordering window
   stays open until 1:00 (`WINDOW_CLOSE_MINUTES`). An order in that half hour reaches
@@ -152,5 +137,31 @@ If something looks like it should be working but isn't — check Render first. M
   wrapped in try/catch: the Orders tab is already committed by that point, so a failure
   there must not fail the correction.
 
+## Recent Changes (continued)
+- FIXED the Sheets rate limit that was dropping orders. Google allows 60 reads per
+  minute per user. Counting the 9:30 job with 18 customers came to exactly 60, which
+  is why the fastest responders got a 429, the webhook threw, and their orders were
+  never recorded (JNN Oxford and JNN Newnan, 2026-10-14). Three changes:
+  - `getSheetIdByTitle` caches tab ids in a module-level map. `logMessage` was issuing
+    TWO full `spreadsheets.get` calls per message purely to resolve a tab id; so were
+    `getOrdersSheetNumericId` and `updateDailySummaryTab`. Tab ids never change. A miss
+    refreshes the whole map, so a tab created later is still picked up.
+  - `logMessages(entries[])` batches the write. The blast logged one row at a time at
+    three API calls each — 54 calls in the tightest minute. Now three calls total
+    regardless of customer count. `logMessage` delegates to it, so single-message
+    callers are unchanged.
+  - `getCustomers` caches for 60s. It ran on nearly every inbound SMS, sometimes twice,
+    while the Customers tab changes about weekly. `invalidateCustomerCache()` is
+    exported if an immediate re-read is ever needed.
+  Net: that minute went from 60 reads to 6, and no longer grows with the customer list.
+- FIXED `appendOrder` overwriting hand-typed rows. `values.append` defaults to
+  `insertDataOption: OVERWRITE`, which writes into the cells after the last populated
+  row — so an order arriving while someone types into that row lands on top of it. Cost
+  JNN Newnan's order on 2026-10-14 (row 912). Now passes `INSERT_ROWS`, which gives the
+  append its own row. Applied to the Message Log append too.
+  NOTE: the Message Log colour block reads `A2:A` AFTER appending. M values there means
+  sheet rows 2..M+1, i.e. 0-based indices 1..M, so the new rows are indices
+  `M-k+1`..`M`. Getting this off by one silently colours the wrong rows.
+
 ## Last Updated
-2026-10-07
+2026-10-19
