@@ -1,9 +1,9 @@
 # Adding a customer to the SMS ordering system
 
-Three manual steps. Everything else happens automatically.
+Two manual steps. Everything else happens automatically.
 
-Route 25252 and 25248 differ only in which spreadsheet gets Step 2 and 3, and in
-the product column order.
+Route 25252 and 25248 differ only in which spreadsheet gets Step 2, and in the
+product column order.
 
 ---
 
@@ -72,29 +72,35 @@ with `JNN Oxford`.
 
 ---
 
-## Step 3 — Driver tabs (same route spreadsheet)
+## Driver tabs — no action needed
 
-Add the customer to every driver tab (Driver_MonTues, Driver_ThuFri, Driver_Sat, and
-Alt_Route_Order_ThuFri where present).
+Adding the name in Step 2 propagates to the driver tabs by itself, formulas included.
 
-**Copy and paste a neighbouring customer's row rather than typing formulas.** Select
-the full row of the customer directly above where yours goes, copy, and paste into the
-new row. Google Sheets shifts the `Restaurant_Data!` references automatically, which is
-exactly what you want.
+This is NOT done by this service. The Node service only ever touches three ranges in a
+route spreadsheet: it reads `Restaurant_Data!A:A` to find the row, then writes
+`Restaurant_Data!B{row}` (date) and `Restaurant_Data!C{row}:{last}{row}` (quantities).
+It has no reference to driver tabs anywhere.
 
-The formulas look like:
+The propagation comes from the **Driver Tools** Apps Script bound to the route
+spreadsheet (Extensions → Apps Script). It lives in the spreadsheet, not in this repo,
+so changes here cannot affect it — and changes to it cannot affect this service.
+
+Worth a glance after adding a store: open a driver tab and check that the new row's
+formula points at the right Restaurant_Data row.
 
 ```
-=IFERROR(IF(Restaurant_Data!C13=0,"",Restaurant_Data!C13),"")
+=IFERROR(IF(Restaurant_Data!C23=0,"",Restaurant_Data!C23),"")
 ```
 
-Copying keeps the row numbers correct without hand-editing, so the row can't end up
-pointing at the wrong customer.
+The row number there must match the store's row in Restaurant_Data. If it pointed
+somewhere else, the driver tab would show another store's numbers and look entirely
+normal while doing it. Verified working as of 2026-10-19.
 
 ---
 
 ## What happens automatically — don't do these by hand
 
+- **Driver tabs** — handled by the Driver Tools Apps Script (above)
 - **Delivery tab** — rebuilt each morning from the Customers tab, deduplicated by name
 - **Daily Totals** — covers 25252 and 25248 already
 - **Orders tab** — rows are appended as orders come in
