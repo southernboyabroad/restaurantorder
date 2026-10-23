@@ -186,5 +186,31 @@ If something looks like it should be working but isn't — check Render first. M
   runs BEFORE the emails in afternoonJob, so it survives an email failure; the other
   two run after and do not.
 
+## Recent Changes (continued)
+- FIXED a decline row silently swallowing the real order that followed. On
+  2026-10-23 Waldo's texted "Please include Michael Lawrence in this chat thread, he
+  is my new GM" — no order in it, so the AI classified it as a DECLINE, which wrote
+  an all-zero row and replied with the usual confirmation. Their actual order ("4 and
+  2") arrived two minutes later, hit the already-ordered guard, and was dropped with
+  no reply and no row. Three changes:
+  - The already-ordered guard now only fires when the existing row HAS ITEMS. An
+    all-zero row is a decline, and a customer who declines then changes their mind
+    must be able to order.
+  - When a zero row exists, the incoming order OVERWRITES that row rather than
+    appending a second one. `updateTodaysOrder` takes an optional rawReply so the row
+    stops showing the decline text.
+  - The AI prompt now distinguishes "says they are not ordering" from "does not
+    mention an order". Staff changes, phone numbers, questions and pleasantries are
+    explicitly not declines, and it is told to leave declined false when unsure.
+- FIXED duplicate rows for one customer racing each other. Every row for a customer
+  targets the SAME Restaurant_Data row and the SAME delivery-tab row, and the 11:30
+  sync fired them concurrently (`Promise.allSettled`), so whichever landed last won —
+  a zero decline row could overwrite a real order. `mergeOrdersByCustomer()` sums rows
+  per customer+route before syncing, matching what the warehouse email already does.
+  Applied to `syncOrdersToRestaurantDataSheets` and the delivery-tab loop in
+  `afternoonJob`. Daily Totals already summed and was unaffected.
+  Duplicate rows arise from a decline followed by an order, a hand-entered row
+  alongside a texted one, or two contacts at the same restaurant.
+
 ## Last Updated
 2026-10-19

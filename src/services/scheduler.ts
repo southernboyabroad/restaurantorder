@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { getCustomers, getTodaysOrders, markOrdersAsEmailed, syncOrdersToRestaurantDataSheets, logMessages, updateDailySummaryTab } from './sheets';
+import { getCustomers, getTodaysOrders, markOrdersAsEmailed, syncOrdersToRestaurantDataSheets, logMessages, updateDailySummaryTab, mergeOrdersByCustomer } from './sheets';
 import { sendSms, buildOrderPromptMessage } from './sms';
 import { formatSummaryText, formatSummaryHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName, groupOrdersByRoute } from './orderSummary';
 import { sendWarehouseEmail } from './email';
@@ -203,8 +203,11 @@ async function afternoonJob(): Promise<void> {
     const orders = await getTodaysOrders(dateStr);
 
     // Sync all today's orders to the delivery tab (catches any that weren't
-    // written in real-time, e.g. early orders or SMS processing hiccups)
-    for (const order of orders) {
+    // written in real-time, e.g. early orders or SMS processing hiccups).
+    // Merged by customer first: a customer with two rows writes to the same
+    // delivery-tab row, so without merging the last one silently wins instead
+    // of the total the warehouse email was built from.
+    for (const order of mergeOrdersByCustomer(orders)) {
       try {
         await updateDeliveryTabOrder(order.name, order.quantities, delivery);
       } catch (syncErr) {

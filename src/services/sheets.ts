@@ -416,9 +416,34 @@ const RESTAURANT_DATA_SHEETS: Record<string, { sheetId: string; columns: string[
 // Name matching is case-insensitive and apostrophe-insensitive so that
 // e.g. "WALDO'S RESTAURANT" matches a row labelled "WALDOS".
 
+// A customer can end up with more than one row for a date — a decline followed
+// by a real order, a hand-entered row alongside a texted one, two contacts at the
+// same restaurant. The warehouse email sums those rows, so everything downstream
+// must sum them too. Writing them separately also raced: every row for a customer
+// targets the SAME Restaurant_Data row, and the sync fired them concurrently, so
+// whichever landed last won — a zero decline row could overwrite a real order.
+export function mergeOrdersByCustomer(orders: OrderRow[]): OrderRow[] {
+  const merged = new Map<string, OrderRow>();
+  for (const order of orders) {
+    const key = `${order.name.toLowerCase().trim()}|${order.route}`;
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, { ...order, quantities: { ...order.quantities } });
+      continue;
+    }
+    for (const [product, qty] of Object.entries(order.quantities)) {
+      existing.quantities[product] = (existing.quantities[product] || 0) + qty;
+    }
+    // Keep the latest row's identity so the newest raw reply is the one shown.
+    existing.rowNumber = order.rowNumber;
+    existing.rawReply = order.rawReply;
+  }
+  return Array.from(merged.values());
+}
+
 export async function syncOrdersToRestaurantDataSheets(dateStr: string): Promise<void> {
   const orders = await getTodaysOrders(dateStr);
-  const routeOrders = orders.filter((o) => RESTAURANT_DATA_SHEETS[o.route]);
+  const routeOrders = mergeOrdersByCustomer(orders.filter((o) => RESTAURANT_DATA_SHEETS[o.route]));
 
   if (routeOrders.length === 0) {
     logger.info('syncOrdersToRestaurantDataSheets: no orders found for route-specific sheets');
@@ -917,6 +942,7 @@ export async function updateTodaysOrder(
   dateStr: string,
   newQuantities: Record<string, number>,
   mode: 'set' | 'add' = 'set',
+  rawReply?: string,
 ): Promise<UpdateResult> {
   const sheets = getClient();
   const res = await sheets.spreadsheets.values.get({
@@ -967,6 +993,15 @@ export async function updateTodaysOrder(
     updates.push({
       range: `Orders!${col}${sheetRow}`,
       values: [[mergedQuantities[config.products[i]] || 0]],
+    });
+  }
+
+  // Replace the raw reply when the caller supplies one, so a row that started as
+  // a decline does not keep showing the decline text after a real order lands.
+  if (rawReply !== undefined) {
+    updates.push({
+      range: `Orders!${columnLetter(4 + config.products.length)}${sheetRow}`,
+      values: [[rawReply]],
     });
   }
 

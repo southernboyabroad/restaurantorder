@@ -634,7 +634,13 @@ Important synonyms — always map these to the canonical product name:
 If the customer is clearly declining, skipping, or not ordering (e.g. "no bread this week", "nothing for us", "we're good", "not until next week", "skip us", "closed today"), set "declined" to true and return empty quantities.
 Return ONLY valid JSON in this exact format: {"quantities": {"product_name": number}, "confident": true/false, "declined": false}
 Set confident to false if the message is ambiguous or doesn't clearly reference any products.
-Set declined to true if the customer is clearly not placing an order this week.
+Set declined to true ONLY when the message actually says they are not ordering.
+"No order" and "no mention of an order" are different things. A message about
+something else entirely — staff changes, phone numbers, delivery questions,
+pleasantries, a greeting — is NOT a decline. If the message neither orders
+anything nor says they are skipping, return declined false with empty quantities.
+Recording a decline that was never made suppresses the customer's reminders, so
+when in doubt leave declined false.
 If a product isn't mentioned, omit it from quantities (don't set it to 0).`;
 
   try {

@@ -453,16 +453,31 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     // Check if THIS specific customer already placed an order today.
     // For shared-phone multi-location customers, match by name so each location
     // can order independently on the same phone number.
-    const senderAlreadyOrdered = todaysOrders.some(
+    const senderExistingOrder = todaysOrders.find(
       (o) =>
         normalizePhone(o.phone) === normalizedFrom &&
         o.name.toLowerCase() === customer.name.toLowerCase(),
     );
+    const senderExistingHasItems =
+      !!senderExistingOrder && Object.values(senderExistingOrder.quantities).some((q) => q > 0);
 
-    if (senderAlreadyOrdered) {
+    // Only a row with real items means "they have ordered". An all-zero row is a
+    // decline, and declines are exactly where a misread is most likely: on
+    // 2026-10-23 a chat message about a new GM was classified as a decline, which
+    // wrote a zero row, which then silently swallowed the real order that followed.
+    // A customer who declines and then changes their mind must be able to order.
+    if (senderExistingHasItems) {
       logger.info('Customer already ordered today — staying silent', { from, name: customer.name, body });
       res.type('text/xml').send('<Response></Response>');
       return;
+    }
+
+    if (senderExistingOrder) {
+      logger.info('Customer has a zero/decline row today — accepting this message as their order', {
+        from,
+        name: customer.name,
+        existingRow: senderExistingOrder.rowNumber,
+      });
     }
 
     // Check if a DIFFERENT contact from the same restaurant already ordered with real items
@@ -613,16 +628,27 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       }
     }
 
-    // Record the order
-    const appendedRowNumber = await appendOrder({
-      date: orderDateStr,
-      phone: customer.phone,
-      name: customer.name,
-      route: customer.route || '',
-      quantities: parsed.quantities,
-      rawReply: body,
-      emailed: false,
-    });
+    // Record the order. If a zero/decline row already exists for them today,
+    // overwrite that row rather than appending a second one.
+    let appendedRowNumber: number;
+    if (senderExistingOrder) {
+      await updateTodaysOrder(customer.name, orderDateStr, parsed.quantities, 'set', body);
+      appendedRowNumber = senderExistingOrder.rowNumber;
+      logger.info('Replaced the earlier decline row with this order', {
+        name: customer.name,
+        row: appendedRowNumber,
+      });
+    } else {
+      appendedRowNumber = await appendOrder({
+        date: orderDateStr,
+        phone: customer.phone,
+        name: customer.name,
+        route: customer.route || '',
+        quantities: parsed.quantities,
+        rawReply: body,
+        emailed: false,
+      });
+    }
 
     // Also update the delivery date tab (second mechanism)
     try {
