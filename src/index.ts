@@ -2,8 +2,9 @@ import express from 'express';
 import { config } from './config';
 import { webhookRouter } from './services/webhook';
 import { startScheduler, reminderJob } from './services/scheduler';
-import { getTodaysOrders } from './services/sheets';
+import { getTodaysOrders, updateDailySummaryTab } from './services/sheets';
 import { updateDeliveryTabOrder } from './services/deliveryTab';
+import { easternDateStr } from './services/orderingWindow';
 import logger from './logger';
 
 const app = express();
@@ -36,7 +37,7 @@ app.get('/api/remind', async (_req, res) => {
 // the normal SMS → delivery-tab flow.
 app.get('/api/sync-delivery', async (_req, res) => {
   try {
-    const dateStr = new Date().toISOString().slice(0, 10);
+    const dateStr = easternDateStr();
     const orders = await getTodaysOrders(dateStr);
 
     if (orders.length === 0) {
@@ -70,6 +71,16 @@ app.get('/api/sync-delivery', async (_req, res) => {
       skipped,
       errors: errors.length > 0 ? errors : undefined,
     });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
+// ── Manual trigger — GET /api/daily-totals ──────────────────────
+app.get('/api/daily-totals', async (_req, res) => {
+  try {
+    await updateDailySummaryTab();
+    res.json({ ok: true, message: 'Daily Totals tab updated' });
   } catch (err) {
     res.status(500).json({ ok: false, error: String(err) });
   }

@@ -325,6 +325,35 @@ describe('parseOrderStrict', () => {
     const result = parseOrderStrict('4 and 3 and 2', undefined, ['toast']);
     expect(result).toBeNull();
   });
+
+  // ── Normalization edge-case tests ────────────────────────────────
+  it('handles "4- inch" (space after hyphen) as 4-inch', () => {
+    const result = parseOrderStrict('4- inch 14');
+    expect(result).not.toBeNull();
+    expect(result!.quantities['4-inch']).toBe(14);
+  });
+
+  it('handles "4- inch" in a multi-product message', () => {
+    const result = parseOrderStrict('toast 10, 4- inch 14, long 5');
+    expect(result).not.toBeNull();
+    expect(result!.quantities.toast).toBe(10);
+    expect(result!.quantities['4-inch']).toBe(14);
+    expect(result!.quantities.long).toBe(5);
+  });
+
+  it('handles dash as separator between product and qty: "4 in -5"', () => {
+    const result = parseOrderStrict('4 in -5');
+    expect(result).not.toBeNull();
+    expect(result!.quantities['4-inch']).toBe(5);
+  });
+
+  it('handles dash separator in multi-product message: "toast 10 4 in -5 long 3"', () => {
+    const result = parseOrderStrict('toast 10 4 in -5 long 3');
+    expect(result).not.toBeNull();
+    expect(result!.quantities.toast).toBe(10);
+    expect(result!.quantities['4-inch']).toBe(5);
+    expect(result!.quantities.long).toBe(3);
+  });
 });
 
 describe('isAffirmativeReply', () => {
@@ -472,6 +501,18 @@ describe('isDeclineReply', () => {
 
   it('does NOT match "same as last time"', () => {
     expect(isDeclineReply('same as last time')).toBe(false);
+  });
+
+  it('detects bare "0"', () => {
+    expect(isDeclineReply('0')).toBe(true);
+  });
+
+  it('detects "zero"', () => {
+    expect(isDeclineReply('zero')).toBe(true);
+  });
+
+  it('detects "Zero" (capitalized)', () => {
+    expect(isDeclineReply('Zero')).toBe(true);
   });
 });
 
