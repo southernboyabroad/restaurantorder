@@ -222,24 +222,58 @@ async function afternoonJob(): Promise<void> {
 
     // Aggregate unsent orders by route and send one totaled email per route.
     // Skip routes where every product total is zero (e.g. all-decline orders).
+    // Each route is sent independently. A bare await here meant one provider
+    // error aborted the loop AND everything after it: the other route's email,
+    // the emailed flags, the Restaurant_Data sync and Daily Totals. That is what
+    // happened on 2026-10-23 when Resend returned a 520 — nothing downstream ran
+    // and nothing said so.
     const routeSummaries = groupOrdersByRoute(dateStr, unsent);
+    const emailedRows: number[] = [];
+    const failedRoutes: string[] = [];
+
     for (const summary of routeSummaries) {
+      const routeLabel = summary.route || 'Unassigned';
+      const rows = summary.orders.map((o) => o.rowNumber);
+
       const hasItems = Object.values(summary.totalsByProduct).some((qty) => qty > 0);
       if (!hasItems) {
-        logger.info(`Skipping email for route ${summary.route || 'Unassigned'} — no items to report`);
+        // All-decline route: nothing to email, but the rows are settled.
+        logger.info(`Skipping email for route ${routeLabel} — no items to report`);
+        emailedRows.push(...rows);
         continue;
       }
-      const routeLabel = summary.route || 'Unassigned';
+
       const subject = `ADDITIONS to Route ${routeLabel}- ${deliveryDateStr}`;
       const textBody = formatSummaryText(summary, dayName);
       const htmlBody = formatSummaryHtml(summary, dayName);
-      await sendWarehouseEmail(subject, textBody, htmlBody);
-      logger.info(`Aggregated email sent for route ${routeLabel} (${summary.orderCount} orders)`);
+      try {
+        await sendWarehouseEmail(subject, textBody, htmlBody);
+        logger.info(`Aggregated email sent for route ${routeLabel} (${summary.orderCount} orders)`);
+        emailedRows.push(...rows);
+      } catch (emailErr) {
+        failedRoutes.push(routeLabel);
+        logger.error(
+          `Failed to email route ${routeLabel} — leaving its ${rows.length} order(s) un-emailed so /trigger-email can retry`,
+          { error: emailErr },
+        );
+      }
     }
 
-    // Mark only the rows this run covered — an order appended while the emails
-    // were being built is not in `unsent` and must stay un-emailed.
-    await markOrdersAsEmailed(dateStr, unsent.map((o) => o.rowNumber));
+    // Mark only the rows whose email actually went out. A route that failed stays
+    // un-emailed so /trigger-email picks it up.
+    await markOrdersAsEmailed(dateStr, emailedRows);
+
+    if (failedRoutes.length > 0) {
+      const alert = `Order email FAILED for route ${failedRoutes.join(', ')} on ${dateStr}. Those orders have NOT reached the warehouse. Open /trigger-email to retry.`;
+      logger.error(alert);
+      if (config.adminPhoneNumber) {
+        try {
+          await sendSms(config.adminPhoneNumber, alert);
+        } catch (smsErr) {
+          logger.error('Could not send the failed-email alert SMS', { error: smsErr });
+        }
+      }
+    }
 
     // Re-sync all today's orders to route-specific Restaurant_Data sheets so
     // any manual edits made in the Orders tab after the morning sync are reflected.

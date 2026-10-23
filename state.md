@@ -163,5 +163,28 @@ If something looks like it should be working but isn't — check Render first. M
   sheet rows 2..M+1, i.e. 0-based indices 1..M, so the new rows are indices
   `M-k+1`..`M`. Getting this off by one silently colours the wrong rows.
 
+## Recent Changes (continued)
+- FIXED the 11:30 job aborting on a single email failure. On 2026-10-23 Resend
+  returned a 520 (their outage; recovered minutes later) while sending route 25248.
+  `await sendWarehouseEmail(...)` sat bare inside the per-route loop, so the throw
+  escaped to the outer catch and killed everything after it: route 25252's email was
+  never attempted, no rows were marked emailed, Restaurant_Data never synced and Daily
+  Totals never rebuilt. The log said only "Afternoon job failed" and nothing else
+  surfaced it.
+  - Each route's send is wrapped individually; a failure logs and continues.
+  - `markOrdersAsEmailed` now receives only the rows whose email actually went out, so
+    a failed route stays un-emailed and `/trigger-email` retries just that route.
+    All-decline routes are still marked, as before.
+  - The Restaurant_Data and Daily Totals syncs now run regardless of email outcome.
+  - A failed route sends an alert SMS to ADMIN_PHONE_NUMBER naming the route and
+    pointing at /trigger-email.
+  - `sendWarehouseEmail` retries transient failures (5xx, 429, or no status at all)
+    with 2s/8s/20s backoff. 4xx is not retried.
+- NOTE for anyone debugging a missed 11:30 email: `/trigger-email` is NOT a full
+  substitute for the afternoon job. It sends email and marks rows, and does nothing
+  else — no delivery tab, no Restaurant_Data, no Daily Totals. The delivery tab sync
+  runs BEFORE the emails in afternoonJob, so it survives an email failure; the other
+  two run after and do not.
+
 ## Last Updated
 2026-10-19
