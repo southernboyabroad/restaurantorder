@@ -227,10 +227,19 @@ If something looks like it should be working but isn't — check Render first. M
   re-sends the same text because they did not see a reply (there is a 15s delay)
   cannot double a quantity. Raising an existing quantity is what "change toast to 15"
   is for.
-  KNOWN GAP: a follow-up naming a product already on the order with a DIFFERENT
-  quantity ("4 toast" then "9 toast") is ambiguous — correction or addition — so it
-  is ignored and logged. Same as the old behaviour, no regression, but still a way to
-  miss an order. This is the case the planned Twilio reconciliation sweep would catch.
+  For a product ALREADY on the order the higher of the two numbers wins; a product
+  not on the order is added. Owner's rule, and the owner's stated preference is that
+  over-ordering is far cheaper than coming up short. Never going down also means an
+  anxious re-send cannot double a quantity. Lowering a quantity is what
+  "change toast to 15" is for.
+  The lookup is keyed on customer NAME, not phone, so a SECOND PERSON at the same
+  restaurant is treated as the same order under the same rule — higher wins. That
+  replaced the old "Heads up, an order has already been placed" reply, which
+  discarded their text. Multi-location customers sharing one phone have distinct
+  names, so their locations stay separate.
+  When nothing would be raised the customer still gets their current total back
+  rather than silence — silence is usually why they re-sent. Other contacts at the
+  restaurant are told when the order changes.
 
 ## Last Updated
 2026-10-19

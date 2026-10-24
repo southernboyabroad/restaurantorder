@@ -27,6 +27,20 @@ const CUSTOMER_PRODUCT_OVERRIDES: Record<string, Record<string, string>> = {
   'thumbsucker': { 'long': 'top_slice' },
 };
 
+// Quantities as the customer-facing lines used in confirmations.
+function formatQuantityLines(quantities: Record<string, number>): string {
+  return Object.entries(quantities)
+    .filter(([, qty]) => qty > 0)
+    .map(([product, qty]) => {
+      const display = product
+        .replace(/_/g, ' ')
+        .replace(/\blong\b/gi, 'hot dog')
+        .replace(/\binstitutional sandwich\b/gi, 'sandwich');
+      return `${display} - ${qty}`;
+    })
+    .join('\n');
+}
+
 function getEffectiveProductMap(customer: Customer): Record<string, string> {
   const sheetMap = customer.productMap || {};
   const overrideKey = Object.keys(CUSTOMER_PRODUCT_OVERRIDES).find(
@@ -450,64 +464,36 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     const todaysOrders = await getTodaysOrders(dateStr);
     const normalizedFrom = normalizePhone(from);
 
-    // Check if THIS specific customer already placed an order today.
-    // For shared-phone multi-location customers, match by name so each location
-    // can order independently on the same phone number.
-    const senderExistingOrder = todaysOrders.find(
-      (o) =>
-        normalizePhone(o.phone) === normalizedFrom &&
-        o.name.toLowerCase() === customer.name.toLowerCase(),
-    );
-    const senderExistingHasItems =
-      !!senderExistingOrder && Object.values(senderExistingOrder.quantities).some((q) => q > 0);
+    // The restaurant's existing order for today, from ANY of its contacts. Keyed on
+    // name rather than phone so a second person texting is treated as the same
+    // order — and because multi-location customers sharing one phone have distinct
+    // names, that still keeps their locations separate.
+    // Last matching row wins, which is the same row updateTodaysOrder will target.
+    let restaurantOrder: typeof todaysOrders[number] | undefined;
+    for (const o of todaysOrders) {
+      if (o.name.toLowerCase() === customer.name.toLowerCase()) restaurantOrder = o;
+    }
+    const restaurantHasItems =
+      !!restaurantOrder && Object.values(restaurantOrder.quantities).some((q) => q > 0);
 
     // An all-zero row is a decline, not an order, and declines are where a misread
     // is most likely: on 2026-10-23 a chat message about a new GM was classified as
     // a decline, wrote a zero row, and silently swallowed the real order that
     // followed. A customer who declines and then changes their mind must be able
     // to order.
-    if (senderExistingOrder && !senderExistingHasItems) {
+    if (restaurantOrder && !restaurantHasItems) {
       logger.info('Customer has a zero/decline row today — accepting this message as their order', {
         from,
         name: customer.name,
-        existingRow: senderExistingOrder.rowNumber,
+        existingRow: restaurantOrder.rowNumber,
       });
     }
 
-    // NOTE: when they DO already have a real order we no longer stop here. People
-    // text their order across several messages — on 2026-10-24 Mad Hogg sent
-    // "4 toast" then "1 hoagie" seconds apart and the hoagie was dropped without a
-    // reply. Whether to act is decided after parsing, below: a message carrying
-    // real quantities is a follow-up to fold in, anything else is chatter to ignore.
-
-    // Check if a DIFFERENT contact from the same restaurant already ordered with real items
-    const otherContactOrder = !senderExistingHasItems && todaysOrders.find(
-      (o) =>
-        o.name.toLowerCase() === customer.name.toLowerCase() &&
-        normalizePhone(o.phone) !== normalizedFrom &&
-        Object.values(o.quantities).some((q) => q > 0),
-    );
-
-    if (otherContactOrder) {
-      // Let them know the order was already handled
-      const existingItems = Object.entries(otherContactOrder.quantities)
-        .filter(([, qty]) => qty > 0)
-        .map(([product, qty]) => {
-          const display = product
-            .replace(/_/g, ' ')
-            .replace(/\blong\b/gi, 'hot dog')
-            .replace(/\binstitutional sandwich\b/gi, 'sandwich');
-          return `${display} - ${qty}`;
-        })
-        .join('\n');
-
-      const alreadyMsg = `Heads up — an order has already been placed for you guys today:\n\n${existingItems}\n\nIf you need to make changes, reply with something like "change toast to 15".`;
-      await sendSms(from, alreadyMsg);
-      void logMessage('OUT', customer.name, from, alreadyMsg);
-      logger.info('Another contact already ordered — notified sender', { from, name: customer.name, orderedBy: otherContactOrder.phone });
-      res.type('text/xml').send('<Response></Response>');
-      return;
-    }
+    // NOTE: an existing order no longer stops us here. People text their order
+    // across several messages — on 2026-10-24 Mad Hogg sent "4 toast" then
+    // "1 hoagie" seconds apart and the hoagie was dropped without a reply — and a
+    // second person at the same restaurant used to be told "already ordered" with
+    // their text discarded. Both are decided after parsing, below.
 
     // Parse the order (pass default product and product order for bare-number mapping)
     const parsed = await parseOrder(parsedBody, customer.defaultProduct, customer.productOrder);
@@ -527,38 +513,55 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     const hasItems = Object.values(parsed.quantities).some((qty) => qty > 0);
 
     // ── Follow-up to an order already on file ─────────────────────
-    // Customers often send their order across several texts. Anything carrying
-    // real quantities is folded into the existing row; anything else ("thanks!",
-    // a thumbs-up, a question) is ignored exactly as before.
-    if (senderExistingHasItems && senderExistingOrder) {
+    // Customers send their order across several texts, and a second person at the
+    // same restaurant may text too. Anything carrying real quantities is folded
+    // into the existing row; anything else ("thanks!", a thumbs-up, a question) is
+    // ignored exactly as before.
+    if (restaurantHasItems && restaurantOrder) {
       if (!hasItems) {
         logger.info('Customer already ordered today — staying silent', { from, name: customer.name, body });
         res.type('text/xml').send('<Response></Response>');
         return;
       }
 
-      // Only products not already on their order. Leaving recorded products
-      // untouched means an anxious re-send of the same text can never double a
-      // quantity — raising an existing one is what "change toast to 15" is for.
-      const additions: Record<string, number> = {};
+      // For a product already on the order, take the HIGHER of the two; for one
+      // that is not, add it. Never going down means an anxious re-send of the same
+      // text cannot double a quantity, and two people texting different numbers for
+      // the same product settles on the larger — short is worse than over here.
+      // Lowering a quantity is what "change toast to 15" is for.
+      const changes: Record<string, number> = {};
       for (const [product, qty] of Object.entries(parsed.quantities)) {
-        if (qty > 0 && !(senderExistingOrder.quantities[product] > 0)) {
-          additions[product] = qty;
-        }
+        if (qty <= 0) continue;
+        const current = restaurantOrder.quantities[product] || 0;
+        const target = Math.max(current, qty);
+        if (target !== current) changes[product] = target;
       }
 
-      if (Object.keys(additions).length === 0) {
-        logger.info('Follow-up only repeats products already on the order — ignoring', {
+      const sameSender = normalizePhone(restaurantOrder.phone) === normalizedFrom;
+
+      if (Object.keys(changes).length === 0) {
+        // Nothing to raise. Reply with the current total anyway — this is usually
+        // someone re-sending because they never saw a confirmation, and silence is
+        // what made them re-send.
+        logger.info('Follow-up would not raise anything — confirming the current order', {
           from,
           name: customer.name,
           body,
-          existing: senderExistingOrder.quantities,
+          existing: restaurantOrder.quantities,
+          sameSender,
         });
+        const currentLines = formatQuantityLines(restaurantOrder.quantities);
+        const alreadyMsg = `You're already down for:\n\n${currentLines}\n\nIf you need to change something, reply with something like "change toast to 15".`;
+        await replyDelay();
+        await sendSms(from, alreadyMsg);
+        void logMessage('OUT', customer.name, from, alreadyMsg);
         res.type('text/xml').send('<Response></Response>');
         return;
       }
 
-      const followUp = await updateTodaysOrder(customer.name, orderDateStr, additions, 'add', body);
+      // 'set' rather than 'add': `changes` already holds the final figure per
+      // product, and only the products named are touched.
+      const followUp = await updateTodaysOrder(customer.name, orderDateStr, changes, 'set', body);
       if (!followUp.found) {
         logger.warn('Follow-up could not find the row it was merging into — falling through', {
           from,
@@ -568,7 +571,8 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
         logger.info('Folded follow-up text into the existing order', {
           from,
           name: customer.name,
-          added: additions,
+          sameSender,
+          applied: changes,
           total: followUp.mergedQuantities,
         });
 
@@ -579,20 +583,21 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
           logger.error('Failed to update delivery tab for follow-up', { error: tabErr });
         }
 
-        const totalLines = Object.entries(followUp.mergedQuantities)
-          .filter(([, qty]) => qty > 0)
-          .map(([product, qty]) => {
-            const display = product
-              .replace(/_/g, ' ')
-              .replace(/\blong\b/gi, 'hot dog')
-              .replace(/\binstitutional sandwich\b/gi, 'sandwich');
-            return `${display} - ${qty}`;
-          })
-          .join('\n');
-        const followUpMsg = `Got it — added to your order. You're down for:\n\n${totalLines}`;
+        const followUpMsg = `Got it — your order is now:\n\n${formatQuantityLines(followUp.mergedQuantities)}`;
         await replyDelay();
         await sendSms(from, followUpMsg);
         void logMessage('OUT', customer.name, from, followUpMsg);
+
+        // Keep the other contacts at this restaurant in the loop.
+        try {
+          const others = await getOtherContactsForCustomer(customer.name, from);
+          for (const contact of others) {
+            await sendSms(contact.phone, `Heads up — your order has been updated to:\n\n${formatQuantityLines(followUp.mergedQuantities)}`);
+          }
+        } catch (notifyErr) {
+          logger.error('Failed to notify other contacts of the update', { error: notifyErr });
+        }
+
         res.type('text/xml').send('<Response></Response>');
         return;
       }
@@ -703,9 +708,9 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     // Record the order. If a zero/decline row already exists for them today,
     // overwrite that row rather than appending a second one.
     let appendedRowNumber: number;
-    if (senderExistingOrder) {
+    if (restaurantOrder) {
       await updateTodaysOrder(customer.name, orderDateStr, parsed.quantities, 'set', body);
-      appendedRowNumber = senderExistingOrder.rowNumber;
+      appendedRowNumber = restaurantOrder.rowNumber;
       logger.info('Replaced the earlier decline row with this order', {
         name: customer.name,
         row: appendedRowNumber,
