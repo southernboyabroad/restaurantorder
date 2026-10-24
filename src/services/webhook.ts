@@ -461,18 +461,12 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     const senderExistingHasItems =
       !!senderExistingOrder && Object.values(senderExistingOrder.quantities).some((q) => q > 0);
 
-    // Only a row with real items means "they have ordered". An all-zero row is a
-    // decline, and declines are exactly where a misread is most likely: on
-    // 2026-10-23 a chat message about a new GM was classified as a decline, which
-    // wrote a zero row, which then silently swallowed the real order that followed.
-    // A customer who declines and then changes their mind must be able to order.
-    if (senderExistingHasItems) {
-      logger.info('Customer already ordered today — staying silent', { from, name: customer.name, body });
-      res.type('text/xml').send('<Response></Response>');
-      return;
-    }
-
-    if (senderExistingOrder) {
+    // An all-zero row is a decline, not an order, and declines are where a misread
+    // is most likely: on 2026-10-23 a chat message about a new GM was classified as
+    // a decline, wrote a zero row, and silently swallowed the real order that
+    // followed. A customer who declines and then changes their mind must be able
+    // to order.
+    if (senderExistingOrder && !senderExistingHasItems) {
       logger.info('Customer has a zero/decline row today — accepting this message as their order', {
         from,
         name: customer.name,
@@ -480,8 +474,14 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
       });
     }
 
+    // NOTE: when they DO already have a real order we no longer stop here. People
+    // text their order across several messages — on 2026-10-24 Mad Hogg sent
+    // "4 toast" then "1 hoagie" seconds apart and the hoagie was dropped without a
+    // reply. Whether to act is decided after parsing, below: a message carrying
+    // real quantities is a follow-up to fold in, anything else is chatter to ignore.
+
     // Check if a DIFFERENT contact from the same restaurant already ordered with real items
-    const otherContactOrder = todaysOrders.find(
+    const otherContactOrder = !senderExistingHasItems && todaysOrders.find(
       (o) =>
         o.name.toLowerCase() === customer.name.toLowerCase() &&
         normalizePhone(o.phone) !== normalizedFrom &&
@@ -525,6 +525,78 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     }
 
     const hasItems = Object.values(parsed.quantities).some((qty) => qty > 0);
+
+    // ── Follow-up to an order already on file ─────────────────────
+    // Customers often send their order across several texts. Anything carrying
+    // real quantities is folded into the existing row; anything else ("thanks!",
+    // a thumbs-up, a question) is ignored exactly as before.
+    if (senderExistingHasItems && senderExistingOrder) {
+      if (!hasItems) {
+        logger.info('Customer already ordered today — staying silent', { from, name: customer.name, body });
+        res.type('text/xml').send('<Response></Response>');
+        return;
+      }
+
+      // Only products not already on their order. Leaving recorded products
+      // untouched means an anxious re-send of the same text can never double a
+      // quantity — raising an existing one is what "change toast to 15" is for.
+      const additions: Record<string, number> = {};
+      for (const [product, qty] of Object.entries(parsed.quantities)) {
+        if (qty > 0 && !(senderExistingOrder.quantities[product] > 0)) {
+          additions[product] = qty;
+        }
+      }
+
+      if (Object.keys(additions).length === 0) {
+        logger.info('Follow-up only repeats products already on the order — ignoring', {
+          from,
+          name: customer.name,
+          body,
+          existing: senderExistingOrder.quantities,
+        });
+        res.type('text/xml').send('<Response></Response>');
+        return;
+      }
+
+      const followUp = await updateTodaysOrder(customer.name, orderDateStr, additions, 'add', body);
+      if (!followUp.found) {
+        logger.warn('Follow-up could not find the row it was merging into — falling through', {
+          from,
+          name: customer.name,
+        });
+      } else {
+        logger.info('Folded follow-up text into the existing order', {
+          from,
+          name: customer.name,
+          added: additions,
+          total: followUp.mergedQuantities,
+        });
+
+        try {
+          const fuDelivery = getDeliveryDate(new Date(`${orderDateStr}T12:00:00`));
+          await updateDeliveryTabOrder(customer.name, followUp.mergedQuantities, fuDelivery);
+        } catch (tabErr) {
+          logger.error('Failed to update delivery tab for follow-up', { error: tabErr });
+        }
+
+        const totalLines = Object.entries(followUp.mergedQuantities)
+          .filter(([, qty]) => qty > 0)
+          .map(([product, qty]) => {
+            const display = product
+              .replace(/_/g, ' ')
+              .replace(/\blong\b/gi, 'hot dog')
+              .replace(/\binstitutional sandwich\b/gi, 'sandwich');
+            return `${display} - ${qty}`;
+          })
+          .join('\n');
+        const followUpMsg = `Got it — added to your order. You're down for:\n\n${totalLines}`;
+        await replyDelay();
+        await sendSms(from, followUpMsg);
+        void logMessage('OUT', customer.name, from, followUpMsg);
+        res.type('text/xml').send('<Response></Response>');
+        return;
+      }
+    }
     // Customer explicitly texted all-zero quantities (e.g. "0 hotdogs, 0 4-inch") — treat as a decline
     const allZeroExplicit = !hasItems && Object.keys(parsed.quantities).length > 0;
 

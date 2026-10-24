@@ -212,5 +212,25 @@ If something looks like it should be working but isn't — check Render first. M
   Duplicate rows arise from a decline followed by an order, a hand-entered row
   alongside a texted one, or two contacts at the same restaurant.
 
+## Recent Changes (continued)
+- FIXED a second text being dropped when the customer had already ordered. On
+  2026-10-24 Mad Hogg sent "4 toast" then "1 hoagie" seconds apart; the toast was
+  recorded and the hoagie was discarded with no reply. The already-ordered guard
+  rejected on WHO sent the message rather than on whether it contained an order — it
+  exists so "thanks!" and emoji do not re-trigger ordering, but none of those parse
+  as orders anyway.
+  The decision now happens AFTER parsing. A message carrying real quantities is
+  folded into the existing row via `updateTodaysOrder(..., 'add')`, the delivery tab
+  is refreshed, and the customer gets the full updated total. Anything without
+  quantities is ignored exactly as before.
+  Only products NOT already on the row are added. That is deliberate: a customer who
+  re-sends the same text because they did not see a reply (there is a 15s delay)
+  cannot double a quantity. Raising an existing quantity is what "change toast to 15"
+  is for.
+  KNOWN GAP: a follow-up naming a product already on the order with a DIFFERENT
+  quantity ("4 toast" then "9 toast") is ambiguous — correction or addition — so it
+  is ignored and logged. Same as the old behaviour, no regression, but still a way to
+  miss an order. This is the case the planned Twilio reconciliation sweep would catch.
+
 ## Last Updated
 2026-10-19
