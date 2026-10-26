@@ -1,9 +1,11 @@
 import { google, sheets_v4 } from 'googleapis';
 import { config } from '../config';
+import { productDisplayName } from './orderSummary';
+import { easternDateStr } from './orderingWindow';
 import logger from '../logger';
 
 // ── Sheet layout ────────────────────────────────────────────────
-// Sheet "Customers"  → columns: Name | Phone | Default Product (optional) | Route (optional) | Product Order (optional) | SMS Days (optional)
+// Sheet "Customers"  → columns: Name | Phone | Default Product (optional) | Route (optional) | Product Order (optional) | SMS Days (optional) | Product Map (optional)
 // Sheet "Orders"     → columns: Date | Phone | Name | Route | product1 | product2 | … | Raw Reply
 // ────────────────────────────────────────────────────────────────
 
@@ -38,8 +40,206 @@ const ABBREV_TO_PRODUCT: Record<string, string> = {
   'bun': '4-inch',
   'buns': '4-inch',
   'dinner': 'dinner_rolls',
+  'hoagie': 'hoagie',
+  'hoagies': 'hoagie',
+  'sub': 'hoagie',
+  'subs': 'hoagie',
+  'sub roll': 'hoagie',
+  'sub rolls': 'hoagie',
+  'sausage roll': 'hoagie',
+  'sausage rolls': 'hoagie',
+  'philly': 'hoagie',
+  'phillies': 'hoagie',
+  'phillys': 'hoagie',
+  'philly roll': 'hoagie',
+  'philly rolls': 'hoagie',
+  'philly bun': 'hoagie',
+  'philly buns': 'hoagie',
+  'philadelphia': 'hoagie',
+  'cheesesteak': 'hoagie',
+  'cheesesteaks': 'hoagie',
+  'cheese steak': 'hoagie',
+  'cheese steaks': 'hoagie',
+  'top_slice': 'top_slice',
+  'top slice': 'top_slice',
+  'top slices': 'top_slice',
   'texas toast': 'toast',
+  'marty': 'marty',
+  'plain_marty': 'plain_marty',
+  'plain marty': 'plain_marty',
+  'marty no seeds': 'plain_marty',
+  'marty no seed': 'plain_marty',
+  '5-inch': '5-inch',
+  '5 inch': '5-inch',
+  '5in': '5-inch',
+  '5-in': '5-inch',
+  'potato_bread': 'potato_bread',
+  'potato bread': 'potato_bread',
+  'potato': 'potato_bread',
+  'regular bread': 'potato_bread',
+  'regular sandwich bread': 'potato_bread',
+  'sandwich bread': 'potato_bread',
+  'slice bread': 'potato_bread',
+  'sliced bread': 'potato_bread',
+  // "slider" and "12 slice" are the same product. Customers say slider;
+  // 12 slice is the internal/warehouse name.
+  'slider': 'slider',
+  'sliders': 'slider',
+  '12 slice': 'slider',
+  '12 slices': 'slider',
+  '12-slice': 'slider',
+  '12-slices': 'slider',
+  '12slice': 'slider',
+  '12slices': 'slider',
+  '12 slice bun': 'slider',
+  '12 slice buns': 'slider',
+  'slider bun': 'slider',
+  'slider buns': 'slider',
+  'slider roll': 'slider',
+  'slider rolls': 'slider',
 };
+
+// ── Sheet metadata cache ────────────────────────────────────────
+// Google allows 60 read requests per minute per user. A full
+// spreadsheets.get just to resolve a tab's numeric id was being issued on
+// every logMessage, every order and every Daily Totals rebuild — roughly
+// 54 of the 60 reads in the minute after the 9:30 blast, which is what
+// made the fastest-replying customers' orders fail with a 429.
+//
+// Tab ids are stable for the life of the spreadsheet, so one lookup is
+// enough. A miss refreshes the whole map, so a tab created later is picked
+// up without a restart.
+
+const sheetIdCache = new Map<string, number>();
+
+async function getSheetIdByTitle(
+  sheets: sheets_v4.Sheets,
+  title: string,
+): Promise<number | null> {
+  const cached = sheetIdCache.get(title);
+  if (cached !== undefined) return cached;
+
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: config.google.sheetId });
+  for (const s of meta.data.sheets || []) {
+    const name = s.properties?.title;
+    const id = s.properties?.sheetId;
+    if (name && id !== null && id !== undefined) sheetIdCache.set(name, id);
+  }
+  return sheetIdCache.get(title) ?? null;
+}
+
+// Called after creating a tab so the next lookup sees it.
+function forgetSheetIdCache(): void {
+  sheetIdCache.clear();
+}
+
+// ── Customer cache ──────────────────────────────────────────────
+// getCustomers runs on essentially every inbound SMS, sometimes twice,
+// while the Customers tab changes about once a week. A short TTL keeps
+// edits picked up quickly without spending a read per message.
+
+const CUSTOMER_CACHE_TTL_MS = 60_000;
+let customerCache: { at: number; customers: Customer[] } | null = null;
+
+export function invalidateCustomerCache(): void {
+  customerCache = null;
+}
+
+// ── Message Log ─────────────────────────────────────────────────
+// Appends one row to the "Message Log" tab in the main spreadsheet.
+// Columns: Date | Time | Customer | Phone | Direction | Message
+// Auto-creates the sheet with a header row if it doesn't exist yet.
+
+export interface LogEntry {
+  direction: 'IN' | 'OUT';
+  customerName: string;
+  customerPhone: string;
+  message: string;
+}
+
+export async function logMessage(
+  direction: 'IN' | 'OUT',
+  customerName: string,
+  customerPhone: string,
+  message: string,
+): Promise<void> {
+  return logMessages([{ direction, customerName, customerPhone, message }]);
+}
+
+// Writing one row at a time cost three API calls each. The 9:30 blast logs a
+// row per customer, so 18 customers meant 54 calls in the same minute the
+// quota is tightest. Batching makes it three calls regardless of how many.
+export async function logMessages(entries: LogEntry[]): Promise<void> {
+  if (entries.length === 0) return;
+  try {
+    const sheets = getClient();
+    const now = new Date();
+    const date = now.toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+    const time = now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit' });
+
+    // Ensure the sheet exists (cached — one metadata read for the process)
+    let logSheetId = await getSheetIdByTitle(sheets, 'Message Log');
+    if (logSheetId === null) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: config.google.sheetId,
+        requestBody: {
+          requests: [{ addSheet: { properties: { title: 'Message Log' } } }],
+        },
+      });
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: config.google.sheetId,
+        range: 'Message Log!A1:F1',
+        valueInputOption: 'RAW',
+        requestBody: { values: [['Date', 'Time', 'Customer', 'Phone', 'Direction', 'Message']] },
+      });
+      forgetSheetIdCache();
+      logSheetId = await getSheetIdByTitle(sheets, 'Message Log');
+    }
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: config.google.sheetId,
+      range: 'Message Log!A:A',
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: {
+        values: entries.map((e) => [date, time, e.customerName, e.customerPhone, e.direction, e.message]),
+      },
+    });
+
+    // Apply alternating row color by date. Read after appending, so rows.length
+    // is the index just past the last new row.
+    if (logSheetId !== null) {
+      const existing = await sheets.spreadsheets.values.get({
+        spreadsheetId: config.google.sheetId,
+        range: 'Message Log!A2:A',
+      });
+      const rows = existing.data.values || [];
+      const priorDates = new Set(
+        rows.map((r: string[]) => r[0]).filter((d: string) => d && d !== date)
+      );
+      const colorIndex = priorDates.size % 2;
+      // A2:A returning M values means sheet rows 2..M+1, i.e. 0-based indices
+      // 1..M. The rows just appended are the last `entries.length` of those.
+      const endRowIndex = rows.length + 1;
+      const startRowIndex = Math.max(1, endRowIndex - entries.length);
+      const color = ORDER_ROW_COLORS[colorIndex];
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: config.google.sheetId,
+        requestBody: {
+          requests: [{
+            repeatCell: {
+              range: { sheetId: logSheetId, startRowIndex, endRowIndex },
+              cell: { userEnteredFormat: { backgroundColor: color } },
+              fields: 'userEnteredFormat.backgroundColor',
+            },
+          }],
+        },
+      });
+    }
+  } catch (err) {
+    logger.warn('Failed to write to Message Log', { error: err });
+  }
+}
 
 function resolveProductName(raw: string): string {
   const key = raw.trim().toLowerCase();
@@ -53,6 +253,8 @@ export interface Customer {
   route?: string; // delivery route number, e.g. "25252"
   productOrder?: string[]; // positional product mapping, e.g. ["toast", "4-inch"]
   smsDays?: number[]; // days-of-week to send SMS (JS convention: 0=Sun … 6=Sat). If omitted, uses the route's default schedule.
+  productMap?: Record<string, string>; // per-customer product remapping, e.g. { long: "top_slice" }
+  prefix?: string; // keyword prefix used to disambiguate when multiple locations share one phone number
 }
 
 export interface OrderRow {
@@ -63,6 +265,11 @@ export interface OrderRow {
   quantities: Record<string, number>; // product → qty
   rawReply: string;
   emailed: boolean; // true if this order was already included in a warehouse email
+  rowNumber: number; // 1-based row in the Orders sheet, used to mark exactly this row as emailed
+  // Twilio's id for the text that created this row. Stored so a reconciliation
+  // pass can ask Twilio what it received and match exactly, rather than guessing
+  // from message text. Blank for hand-entered and admin-placed orders.
+  messageSid?: string;
 }
 
 let sheetsClient: sheets_v4.Sheets | null = null;
@@ -91,10 +298,14 @@ export function getSheetsClient(): sheets_v4.Sheets {
 // ── Read customers ──────────────────────────────────────────────
 
 export async function getCustomers(): Promise<Customer[]> {
+  if (customerCache && Date.now() - customerCache.at < CUSTOMER_CACHE_TTL_MS) {
+    return customerCache.customers;
+  }
+
   const sheets = getClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: config.google.sheetId,
-    range: 'Customers!A2:F', // skip header; col C = default product, col D = route, col E = product order, col F = SMS days
+    range: 'Customers!A2:H', // skip header; col C = default product, col D = route, col E = product order, col F = SMS days, col G = product map, col H = prefix
   });
 
   const rows = res.data.values || [];
@@ -113,8 +324,19 @@ export async function getCustomers(): Promise<Customer[]> {
       smsDays: row[5]
         ? row[5].split(',').map((s: string) => parseInt(s.trim(), 10)).filter((n: number) => !isNaN(n))
         : undefined,
+      productMap: row[6]
+        ? Object.fromEntries(
+            row[6].split(',')
+              .map((s: string) => s.trim())
+              .filter(Boolean)
+              .map((pair: string) => pair.split(':').map((p: string) => p.trim().toLowerCase()))
+              .filter((parts: string[]) => parts.length === 2),
+          )
+        : undefined,
+      prefix: row[7]?.trim().toLowerCase() || undefined,
     }));
 
+  customerCache = { at: Date.now(), customers };
   logger.info(`Loaded ${customers.length} customers from Sheets`);
   return customers;
 }
@@ -153,8 +375,195 @@ export async function ensureOrdersSheet(): Promise<void> {
 
 // ── Append an order row ─────────────────────────────────────────
 
-export async function appendOrder(order: OrderRow): Promise<void> {
+// ── Column layout expected by the Restaurant_Data tab ────────────────────────
+// Columns always start at C. Each route may have a different number of product
+// columns depending on what has been set up in that spreadsheet.
+
+// Route 25252: C = SANDWICH | D = 4IN | E = TOAST | F = HOT DOGS | G = DINNER | H = TOP SLICE | I = HOAGIE
+const RESTAURANT_DATA_COLUMNS_25252 = [
+  'institutional_sandwich', // C
+  '4-inch',                 // D
+  'toast',                  // E
+  'long',                   // F
+  'dinner_rolls',           // G
+  'top_slice',              // H
+  'hoagie',                 // I
+  'marty',                  // J
+  'plain_marty',            // K
+  'slider',                 // L
+];
+
+// Route 25248: same as 25252 plus the three new products in J, K, L, potato_bread in M, slider in N
+const RESTAURANT_DATA_COLUMNS_25248 = [
+  'institutional_sandwich', // C
+  '4-inch',                 // D
+  'toast',                  // E
+  'long',                   // F
+  'dinner_rolls',           // G
+  'top_slice',              // H
+  'hoagie',                 // I
+  'marty',                  // J
+  'plain_marty',            // K
+  '5-inch',                 // L
+  'potato_bread',           // M
+  'slider',                 // N
+];
+
+// Routes that have a dedicated Restaurant_Data sheet
+const RESTAURANT_DATA_SHEETS: Record<string, { sheetId: string; columns: string[] } | undefined> = {
+  '25252': config.google.sheetId25252 ? { sheetId: config.google.sheetId25252, columns: RESTAURANT_DATA_COLUMNS_25252 } : undefined,
+  '25248': config.google.sheetId25248 ? { sheetId: config.google.sheetId25248, columns: RESTAURANT_DATA_COLUMNS_25248 } : undefined,
+};
+
+// ── Find the row in Restaurant_Data whose column A matches the customer name,
+// then update column B (date) and columns C–I (quantities) in place.
+// Name matching is case-insensitive and apostrophe-insensitive so that
+// e.g. "WALDO'S RESTAURANT" matches a row labelled "WALDOS".
+
+// A customer can end up with more than one row for a date — a decline followed
+// by a real order, a hand-entered row alongside a texted one, two contacts at the
+// same restaurant. The warehouse email sums those rows, so everything downstream
+// must sum them too. Writing them separately also raced: every row for a customer
+// targets the SAME Restaurant_Data row, and the sync fired them concurrently, so
+// whichever landed last won — a zero decline row could overwrite a real order.
+export function mergeOrdersByCustomer(orders: OrderRow[]): OrderRow[] {
+  const merged = new Map<string, OrderRow>();
+  for (const order of orders) {
+    const key = `${order.name.toLowerCase().trim()}|${order.route}`;
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, { ...order, quantities: { ...order.quantities } });
+      continue;
+    }
+    for (const [product, qty] of Object.entries(order.quantities)) {
+      existing.quantities[product] = (existing.quantities[product] || 0) + qty;
+    }
+    // Keep the latest row's identity so the newest raw reply is the one shown.
+    existing.rowNumber = order.rowNumber;
+    existing.rawReply = order.rawReply;
+  }
+  return Array.from(merged.values());
+}
+
+export async function syncOrdersToRestaurantDataSheets(dateStr: string): Promise<void> {
+  const orders = await getTodaysOrders(dateStr);
+  const routeOrders = mergeOrdersByCustomer(orders.filter((o) => RESTAURANT_DATA_SHEETS[o.route]));
+
+  if (routeOrders.length === 0) {
+    logger.info('syncOrdersToRestaurantDataSheets: no orders found for route-specific sheets');
+    return;
+  }
+
+  logger.info(`syncOrdersToRestaurantDataSheets: syncing ${routeOrders.length} order(s) to Restaurant_Data sheets`);
+
+  const results = await Promise.allSettled(
+    routeOrders.map((order) => {
+      const sheet = RESTAURANT_DATA_SHEETS[order.route]!;
+      return updateRestaurantDataRow(sheet.sheetId, sheet.columns, order.name, order.date, order.quantities);
+    }),
+  );
+
+  const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+  const failed = results.filter((r) => r.status === 'rejected').length;
+  logger.info(`syncOrdersToRestaurantDataSheets complete: ${succeeded} synced, ${failed} failed`);
+}
+
+async function updateRestaurantDataRow(
+  sheetId: string,
+  columns: string[],
+  customerName: string,
+  date: string,
+  quantities: Record<string, number>,
+): Promise<void> {
   const sheets = getClient();
+  const norm = (s: string) => s.toLowerCase().trim().replace(/[''']/g, '');
+  const target = norm(customerName);
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: sheetId,
+    range: 'Restaurant_Data!A:A',
+  });
+
+  const rows = res.data.values || [];
+  let rowNumber = -1;
+
+  // Exact match (after normalisation)
+  for (let i = 0; i < rows.length; i++) {
+    if (norm(rows[i][0] || '') === target) { rowNumber = i + 1; break; }
+  }
+
+  // Fallback: row label is contained in the customer name, or vice-versa
+  if (rowNumber === -1) {
+    for (let i = 0; i < rows.length; i++) {
+      const label = norm(rows[i][0] || '');
+      if (label && (target.includes(label) || label.includes(target))) {
+        rowNumber = i + 1; break;
+      }
+    }
+  }
+
+  if (rowNumber === -1) {
+    logger.warn(`Restaurant_Data: no row found for "${customerName}" on sheet ${sheetId} — skipping`);
+    return;
+  }
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: sheetId,
+    requestBody: {
+      valueInputOption: 'RAW',
+      data: [
+        { range: `Restaurant_Data!B${rowNumber}`, values: [[date]] },
+        {
+          range: `Restaurant_Data!C${rowNumber}:${columnLetter(2 + columns.length - 1)}${rowNumber}`,
+          values: [columns.map((p) => quantities[p] || '')],
+        },
+      ],
+    },
+  });
+
+  logger.info(`Restaurant_Data row ${rowNumber} updated for "${customerName}" on sheet ${sheetId}`);
+}
+
+
+// Two alternating row colors for the Orders sheet (soft blue / soft green)
+const ORDER_ROW_COLORS = [
+  { red: 0.80, green: 0.90, blue: 1.00 }, // light blue
+  { red: 0.82, green: 0.96, blue: 0.82 }, // light green
+];
+
+async function getOrdersSheetNumericId(sheets: sheets_v4.Sheets): Promise<number | null> {
+  return getSheetIdByTitle(sheets, 'Orders');
+}
+
+async function applyOrderRowColors(
+  sheets: sheets_v4.Sheets,
+  numericSheetId: number,
+  rowIndices: number[],
+  colorIndex: number,
+): Promise<void> {
+  const color = ORDER_ROW_COLORS[colorIndex];
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: config.google.sheetId,
+    requestBody: {
+      requests: rowIndices.map((rowIndex) => ({
+        repeatCell: {
+          range: {
+            sheetId: numericSheetId,
+            startRowIndex: rowIndex,
+            endRowIndex: rowIndex + 1,
+          },
+          cell: { userEnteredFormat: { backgroundColor: color } },
+          fields: 'userEnteredFormat.backgroundColor',
+        },
+      })),
+    },
+  });
+}
+
+export async function appendOrder(order: Omit<OrderRow, 'rowNumber'>): Promise<number> {
+  const sheets = getClient();
+  // Columns A-D, the products, Raw Reply, Emailed (left blank — markOrdersAsEmailed
+  // owns it), then the Twilio message id.
   const row = [
     order.date,
     order.phone,
@@ -162,16 +571,67 @@ export async function appendOrder(order: OrderRow): Promise<void> {
     order.route,
     ...config.products.map((p) => order.quantities[p] ?? 0),
     order.rawReply,
+    '',
+    order.messageSid ?? '',
   ];
 
-  await sheets.spreadsheets.values.append({
+  const appendRes = await sheets.spreadsheets.values.append({
     spreadsheetId: config.google.sheetId,
     range: 'Orders!A:A',
     valueInputOption: 'RAW',
+    // INSERT_ROWS, not the OVERWRITE default: overwrite writes into the cells
+    // after the last populated row, so an order arriving while someone is
+    // typing into that row lands on top of their entry and one of the two is
+    // lost. Inserting gives the order its own row and cannot collide.
+    insertDataOption: 'INSERT_ROWS',
     requestBody: { values: [row] },
   });
 
-  logger.info(`Order recorded for ${order.name} (${order.phone})`);
+  // "Orders!A662:P662" → 662, so callers can mark exactly this row as emailed
+  const updatedRange = appendRes.data.updates?.updatedRange || '';
+  const appendedRowNumber = parseInt(updatedRange.match(/![A-Z]+(\d+)/i)?.[1] || '0', 10) || 0;
+
+  // Apply alternating row color — all rows for the same date get the same color,
+  // switching to the other color each new date.
+  // Also backfills any manually pre-entered rows for today that are still white.
+  try {
+    const numericSheetId = await getOrdersSheetNumericId(sheets);
+    if (numericSheetId !== null) {
+      const existing = await sheets.spreadsheets.values.get({
+        spreadsheetId: config.google.sheetId,
+        range: 'Orders!A2:A',
+      });
+      const rows = existing.data.values || [];
+      // Count distinct dates that appeared BEFORE today's date — that determines parity.
+      const priorDates = new Set(
+        rows.map((r: string[]) => r[0]).filter((d: string) => d && d !== order.date)
+      );
+      const colorIndex = priorDates.size % 2;
+      // Color all rows for today's date (including any manually pre-entered ones).
+      // rows[] covers A2:A, so row i in the array is sheet row index i+1 (0-based).
+      const todayIndices = rows
+        .map((r: string[], i: number) => (r[0] === order.date ? i + 1 : -1))
+        .filter((i: number) => i !== -1);
+      if (todayIndices.length > 0) {
+        await applyOrderRowColors(sheets, numericSheetId, todayIndices, colorIndex);
+      }
+    }
+  } catch (colorErr) {
+    logger.warn('Failed to apply row color to Orders sheet', { error: colorErr });
+  }
+
+  // If this route has a dedicated Restaurant_Data sheet, find the matching
+  // row by name and update quantities in place (never append).
+  const restaurantSheet = RESTAURANT_DATA_SHEETS[order.route];
+  if (restaurantSheet) {
+    await updateRestaurantDataRow(restaurantSheet.sheetId, restaurantSheet.columns, order.name, order.date, order.quantities);
+  }
+
+  // Update the Daily Totals summary tab (fire-and-forget — non-fatal)
+  void updateDailySummaryTab(order.date);
+
+  logger.info(`Order recorded for ${order.name} (${order.phone})`, { row: appendedRowNumber });
+  return appendedRowNumber;
 }
 
 // ── Read today's orders ─────────────────────────────────────────
@@ -187,11 +647,12 @@ export async function getTodaysOrders(dateStr: string): Promise<OrderRow[]> {
   const orders: OrderRow[] = [];
   const emailedCol = 4 + config.products.length + 1; // after Raw Reply
 
-  for (const row of rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     if (row[0] !== dateStr) continue;
     const quantities: Record<string, number> = {};
-    config.products.forEach((p, i) => {
-      quantities[p] = parseInt(row[4 + i] || '0', 10) || 0;
+    config.products.forEach((p, idx) => {
+      quantities[p] = parseInt(row[4 + idx] || '0', 10) || 0;
     });
     orders.push({
       date: row[0],
@@ -201,6 +662,8 @@ export async function getTodaysOrders(dateStr: string): Promise<OrderRow[]> {
       quantities,
       rawReply: row[4 + config.products.length] || '',
       emailed: (row[emailedCol] || '').toUpperCase() === 'Y',
+      rowNumber: i + 2, // +2: row 1 is headers and the read starts at A2
+      messageSid: (row[emailedCol + 1] || '').toString().trim() || undefined,
     });
   }
 
@@ -217,7 +680,7 @@ export async function hasBatchBeenSent(dateStr: string): Promise<boolean> {
 
 // ── Mark all of today's un-emailed orders as emailed ──────────
 
-export async function markOrdersAsEmailed(dateStr: string): Promise<void> {
+export async function markOrdersAsEmailed(dateStr: string, rowNumbers?: number[]): Promise<void> {
   const sheets = getClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: config.google.sheetId,
@@ -229,12 +692,18 @@ export async function markOrdersAsEmailed(dateStr: string): Promise<void> {
   const emailedColLetter = columnLetter(emailedCol); // spreadsheet column letter
 
   const updates: { range: string; values: string[][] }[] = [];
+  // When the caller names the rows it actually emailed, mark only those. Marking
+  // every un-emailed row for the date would also stamp orders that arrived while
+  // the email was being built, and hand-entered rows the email never covered —
+  // they would then be skipped forever, including by /trigger-email.
+  const only = rowNumbers ? new Set(rowNumbers) : null;
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     if (row[0] !== dateStr) continue;
     if ((row[emailedCol] || '').toUpperCase() === 'Y') continue; // already marked
     const sheetRow = i + 2; // +2 because row 1 is headers, and i is 0-indexed
+    if (only && !only.has(sheetRow)) continue;
     updates.push({
       range: `Orders!${emailedColLetter}${sheetRow}`,
       values: [['Y']],
@@ -252,6 +721,209 @@ export async function markOrdersAsEmailed(dateStr: string): Promise<void> {
   });
 
   logger.info(`Marked ${updates.length} orders as emailed for ${dateStr}`);
+}
+
+// ── Totals rows on the Orders tab ───────────────────────────────
+// After the 11:30 job, the day's totals are written as one row per route
+// directly beneath that day's orders, so the orders, the totals and the
+// warehouse email can be checked against each other in one place. They are
+// deleted at the start of the next ordering day.
+//
+// CRITICAL: column A (Date) stays BLANK on these rows. Every read path finds
+// orders by matching column A against the date — getTodaysOrders,
+// markOrdersAsEmailed, updateTodaysOrder. A date here would make the totals
+// read as an order and silently double every figure, in the sheet and in the
+// email. The blank date plus the TOTAL label is also how they are found again
+// for deletion.
+
+const TOTALS_ROW_PREFIX = 'TOTAL ';
+
+export async function clearOrdersTabTotalsRows(): Promise<void> {
+  try {
+    const sheets = getClient();
+    const sheetId = await getSheetIdByTitle(sheets, 'Orders');
+    if (sheetId === null) return;
+
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: config.google.sheetId,
+      range: 'Orders!A:D',
+    });
+    const rows = res.data.values || [];
+
+    const targets: number[] = []; // 0-based row indices
+    for (let i = 0; i < rows.length; i++) {
+      const dateCell = (rows[i]?.[0] ?? '').toString().trim();
+      const nameCell = (rows[i]?.[2] ?? '').toString().trim();
+      if (dateCell === '' && nameCell.toUpperCase().startsWith(TOTALS_ROW_PREFIX)) {
+        targets.push(i);
+      }
+    }
+    if (targets.length === 0) return;
+
+    // Bottom-up, so deleting one does not shift the index of the next.
+    const requests = targets
+      .sort((a, b) => b - a)
+      .map((i) => ({
+        deleteDimension: {
+          range: { sheetId, dimension: 'ROWS' as const, startIndex: i, endIndex: i + 1 },
+        },
+      }));
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: config.google.sheetId,
+      requestBody: { requests },
+    });
+    logger.info(`Cleared ${targets.length} totals row(s) from the Orders tab`);
+  } catch (err) {
+    logger.warn('Failed to clear totals rows from the Orders tab', { error: err });
+  }
+}
+
+export async function writeOrdersTabTotalsRows(dateStr: string): Promise<void> {
+  try {
+    await clearOrdersTabTotalsRows();
+
+    const sheets = getClient();
+    const orders = await getTodaysOrders(dateStr);
+    if (orders.length === 0) return;
+
+    // Summed per route — the same grouping the warehouse email uses, so the two
+    // can be read side by side.
+    const byRoute = new Map<string, Record<string, number>>();
+    for (const order of orders) {
+      const route = order.route || 'Unassigned';
+      if (!byRoute.has(route)) byRoute.set(route, {});
+      const totals = byRoute.get(route)!;
+      for (const product of config.products) {
+        totals[product] = (totals[product] || 0) + (order.quantities[product] || 0);
+      }
+    }
+
+    const rows: (string | number)[][] = [];
+    for (const [route, totals] of [...byRoute.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      if (!Object.values(totals).some((q) => q > 0)) continue; // all-decline route
+      rows.push([
+        '',
+        '',
+        `${TOTALS_ROW_PREFIX}${route}`,
+        route,
+        ...config.products.map((p) => totals[p] || 0),
+        `Totals for ${dateStr}`,
+      ]);
+    }
+    if (rows.length === 0) return;
+
+    // Column A is blank on totals rows by design, so reading it gives the last
+    // ORDER row and the first free row below it.
+    const colA = await sheets.spreadsheets.values.get({
+      spreadsheetId: config.google.sheetId,
+      range: 'Orders!A:A',
+    });
+    // +1 more leaves one blank row between the last order and the totals.
+    const startRow = (colA.data.values || []).length + 2;
+    const lastCol = columnLetter(4 + config.products.length);
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: config.google.sheetId,
+      range: `Orders!A${startRow}:${lastCol}${startRow + rows.length - 1}`,
+      valueInputOption: 'RAW',
+      requestBody: { values: rows },
+    });
+
+    logger.info(`Wrote ${rows.length} totals row(s) to the Orders tab for ${dateStr}`, {
+      firstRow: startRow,
+      routes: rows.map((r) => r[3]),
+    });
+  } catch (err) {
+    // Convenience only — must never take down the afternoon job.
+    logger.warn('Failed to write totals rows to the Orders tab', { error: err });
+  }
+}
+
+// ── Daily Totals tab ────────────────────────────────────────────
+// Rewrites the "Daily Totals" tab with product totals for today's orders,
+// broken out by route (25252 / 25248) plus an overall total column.
+// Called on every order and at the 11:30 AM summary job so late orders are included.
+
+const DAILY_TOTALS_SHEET = 'Daily Totals';
+const SUMMARY_ROUTES = ['25252', '25248'];
+
+// Find the earliest upcoming order date in the Orders sheet (today or future).
+// Falls back to today if nothing is found.
+async function findNextOrderDate(): Promise<string> {
+  const today = easternDateStr();
+  try {
+    const sheets = getClient();
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: config.google.sheetId,
+      range: 'Orders!A2:A',
+    });
+    const dates = (res.data.values || [])
+      .map((r: string[]) => r[0])
+      .filter((d: string) => d >= today);
+    if (dates.length > 0) return dates.sort()[0];
+  } catch { /* fall through */ }
+  return today;
+}
+
+export async function updateDailySummaryTab(dateStr?: string): Promise<void> {
+  try {
+    const sheets = getClient();
+    const date = dateStr ?? await findNextOrderDate();
+    const orders = await getTodaysOrders(date);
+
+    // Ensure the sheet exists (cached — one metadata read for the process)
+    const totalsSheetId = await getSheetIdByTitle(sheets, DAILY_TOTALS_SHEET);
+    if (totalsSheetId === null) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: config.google.sheetId,
+        requestBody: { requests: [{ addSheet: { properties: { title: DAILY_TOTALS_SHEET } } }] },
+      });
+      forgetSheetIdCache();
+    }
+
+    // Sum quantities per product per route
+    const totals: Record<string, Record<string, number>> = {};
+    for (const route of SUMMARY_ROUTES) totals[route] = {};
+
+    for (const order of orders) {
+      const route = SUMMARY_ROUTES.includes(order.route) ? order.route : null;
+      if (!route) continue;
+      for (const product of config.products) {
+        totals[route][product] = (totals[route][product] || 0) + (order.quantities[product] || 0);
+      }
+    }
+
+    // Build rows
+    const rows: (string | number)[][] = [
+      [`Date: ${date}`],
+      [],
+      ['Product', ...SUMMARY_ROUTES, 'Total'],
+    ];
+
+    for (const product of config.products) {
+      const routeVals = SUMMARY_ROUTES.map((r) => totals[r][product] || 0);
+      const total = routeVals.reduce((a, b) => a + b, 0);
+      if (total === 0) continue; // skip products with no orders today
+      rows.push([productDisplayName(product), ...routeVals, total]);
+    }
+
+    // Clear and rewrite
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: config.google.sheetId,
+      range: `${DAILY_TOTALS_SHEET}!A1:Z50`,
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: config.google.sheetId,
+      range: `${DAILY_TOTALS_SHEET}!A1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: rows },
+    });
+
+    logger.info(`Daily Totals tab updated for ${date} (${orders.length} orders)`);
+  } catch (err) {
+    logger.warn('Failed to update Daily Totals tab', { error: err });
+  }
 }
 
 // Convert 0-based column index to spreadsheet letter (0=A, 1=B, …, 25=Z, 26=AA)
@@ -278,12 +950,13 @@ export async function getLastOrderForCustomer(phone: string): Promise<OrderRow |
   const rows = res.data.values || [];
   let lastOrder: OrderRow | null = null;
 
-  for (const row of rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     if (normalizePhone(row[1] || '') !== normalized) continue;
     const quantities: Record<string, number> = {};
     let hasItems = false;
-    config.products.forEach((p, i) => {
-      const qty = parseInt(row[4 + i] || '0', 10) || 0;
+    config.products.forEach((p, idx) => {
+      const qty = parseInt(row[4 + idx] || '0', 10) || 0;
       quantities[p] = qty;
       if (qty > 0) hasItems = true;
     });
@@ -297,6 +970,7 @@ export async function getLastOrderForCustomer(phone: string): Promise<OrderRow |
       quantities,
       rawReply: row[4 + config.products.length] || '',
       emailed: (row[emailedCol] || '').toUpperCase() === 'Y',
+      rowNumber: i + 2,
     };
   }
 
@@ -340,31 +1014,39 @@ export async function findCustomerByPhone(phone: string): Promise<Customer | und
   return customers.find((c) => normalizePhone(c.phone) === normalized);
 }
 
+export async function findCustomersByPhone(phone: string): Promise<Customer[]> {
+  const normalized = normalizePhone(phone);
+  const customers = await getCustomers();
+  return customers.filter((c) => normalizePhone(c.phone) === normalized);
+}
+
 // ── Look up a customer by partial name ──────────────────────────
 // Used for admin corrections like "change Waldo's toast to 15" where
 // "Waldo" is a partial match against "WALDO'S RESTAURANT" in the sheet.
 
 export async function findCustomerByNameHint(hint: string): Promise<{ customer: Customer; ambiguous?: string[] } | null> {
   const customers = await getCustomers();
-  const lower = hint.toLowerCase().trim();
+  // Strip apostrophes so "Dad's BBQ" matches "Dads BBQ" and vice-versa
+  const norm = (s: string) => s.toLowerCase().trim().replace(/[''']/g, '');
+  const lower = norm(hint);
 
-  // Exact match first (case-insensitive)
-  const exact = customers.find((c) => c.name.toLowerCase().trim() === lower);
+  // Exact match first (case-insensitive, apostrophe-insensitive)
+  const exact = customers.find((c) => norm(c.name) === lower);
   if (exact) return { customer: exact };
 
   // Partial match — name contains the hint
-  const partial = customers.filter((c) => c.name.toLowerCase().includes(lower));
+  const partial = customers.filter((c) => norm(c.name).includes(lower));
   if (partial.length === 1) return { customer: partial[0] };
   if (partial.length > 1) {
     // If all matches share the same name (e.g. same restaurant, multiple phone numbers),
     // treat it as a single match — the order row uses the name, not the phone.
-    const uniqueNames = new Set(partial.map((c) => c.name.toLowerCase().trim()));
+    const uniqueNames = new Set(partial.map((c) => norm(c.name)));
     if (uniqueNames.size === 1) return { customer: partial[0] };
     return { customer: partial[0], ambiguous: partial.map((c) => c.name) };
   }
 
   // Try the other direction — hint contains the customer name
-  const reverse = customers.filter((c) => lower.includes(c.name.toLowerCase().trim()));
+  const reverse = customers.filter((c) => lower.includes(norm(c.name)));
   if (reverse.length === 1) return { customer: reverse[0] };
 
   return null;
@@ -385,6 +1067,8 @@ export async function updateTodaysOrder(
   customerName: string,
   dateStr: string,
   newQuantities: Record<string, number>,
+  mode: 'set' | 'add' = 'set',
+  rawReply?: string,
 ): Promise<UpdateResult> {
   const sheets = getClient();
   const res = await sheets.spreadsheets.values.get({
@@ -417,10 +1101,13 @@ export async function updateTodaysOrder(
   });
   const wasEmailed = (row[emailedCol] || '').toUpperCase() === 'Y';
 
-  // Merge: keep existing quantities, override with the new ones
+  // Merge: keep existing quantities, then either replace ("change toast to 15")
+  // or increment ("add 5 toast") the products named in the correction.
   const mergedQuantities: Record<string, number> = { ...previousQuantities };
   for (const [product, qty] of Object.entries(newQuantities)) {
-    mergedQuantities[product] = qty;
+    mergedQuantities[product] = mode === 'add'
+      ? (previousQuantities[product] || 0) + qty
+      : qty;
   }
 
   // Build cell updates
@@ -432,6 +1119,15 @@ export async function updateTodaysOrder(
     updates.push({
       range: `Orders!${col}${sheetRow}`,
       values: [[mergedQuantities[config.products[i]] || 0]],
+    });
+  }
+
+  // Replace the raw reply when the caller supplies one, so a row that started as
+  // a decline does not keep showing the decline text after a real order lands.
+  if (rawReply !== undefined) {
+    updates.push({
+      range: `Orders!${columnLetter(4 + config.products.length)}${sheetRow}`,
+      values: [[rawReply]],
     });
   }
 
@@ -449,7 +1145,35 @@ export async function updateTodaysOrder(
     },
   });
 
+  // Push the corrected numbers downstream, the same way appendOrder does. Without
+  // this a correction only lands in the Orders tab: the route sheet and Daily Totals
+  // keep the old figure, and the sole re-sync is the 11:30 job, so anything corrected
+  // after that stays stale indefinitely. Non-fatal — the Orders tab is already
+  // updated, so a failure here must not fail the correction.
+  const route = row[3] || '';
+  const restaurantSheet = RESTAURANT_DATA_SHEETS[route];
+  if (restaurantSheet) {
+    try {
+      await updateRestaurantDataRow(
+        restaurantSheet.sheetId,
+        restaurantSheet.columns,
+        customerName,
+        dateStr,
+        mergedQuantities,
+      );
+    } catch (syncErr) {
+      logger.error('Failed to sync correction to Restaurant_Data sheet', {
+        error: syncErr,
+        customer: customerName,
+        route,
+      });
+    }
+  }
+  void updateDailySummaryTab(dateStr);
+
   logger.info(`Updated order for ${customerName} on ${dateStr}`, {
+    mode,
+    route,
     previousQuantities,
     mergedQuantities,
   });
