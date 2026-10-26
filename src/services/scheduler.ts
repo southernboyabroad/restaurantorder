@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { getCustomers, getTodaysOrders, markOrdersAsEmailed, syncOrdersToRestaurantDataSheets, logMessages, updateDailySummaryTab, mergeOrdersByCustomer } from './sheets';
+import { getCustomers, getTodaysOrders, markOrdersAsEmailed, syncOrdersToRestaurantDataSheets, logMessages, updateDailySummaryTab, mergeOrdersByCustomer, clearOrdersTabTotalsRows, writeOrdersTabTotalsRows } from './sheets';
 import { sendSms, buildOrderPromptMessage } from './sms';
 import { formatSummaryText, formatSummaryHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName, groupOrdersByRoute } from './orderSummary';
 import { sendWarehouseEmail } from './email';
@@ -23,6 +23,9 @@ async function morningJob(): Promise<void> {
   logger.info('=== MORNING JOB START ===');
   try {
     await ensureOrdersSheet();
+    // Clear the previous ordering day's totals before anything is written, so
+    // today's orders start on a clean sheet.
+    await clearOrdersTabTotalsRows();
     // Create the delivery date tab (e.g. "DLVR 2-14") if it doesn't exist yet
     try {
       await ensureDeliveryTab();
@@ -292,6 +295,11 @@ async function afternoonJob(): Promise<void> {
     } catch (totalsErr) {
       logger.error('Failed to update Daily Totals tab at 11:30', { error: totalsErr });
     }
+
+    // Totals per route, written under the day's orders so they can be checked
+    // against the warehouse email without leaving the tab. Cleared at 9:30 on the
+    // next ordering day.
+    await writeOrdersTabTotalsRows(dateStr);
 
     logger.info('=== AFTERNOON JOB COMPLETE ===');
   } catch (err) {

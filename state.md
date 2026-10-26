@@ -241,5 +241,24 @@ If something looks like it should be working but isn't — check Render first. M
   rather than silence — silence is usually why they re-sent. Other contacts at the
   restaurant are told when the order changes.
 
+## Recent Changes (continued)
+- The Orders tab now carries the day's totals. After the 11:30 job, one row per
+  route is written beneath that day's orders, separated by a single blank row, so
+  the orders, the totals and the warehouse email can be reconciled without leaving
+  the tab. Cleared at the start of the next ordering day (9:30) before anything new
+  is written. `clearOrdersTabTotalsRows()` / `writeOrdersTabTotalsRows()`.
+  CRITICAL INVARIANT: column A (Date) is BLANK on these rows. Every read path finds
+  orders by matching column A against the date — getTodaysOrders, markOrdersAsEmailed,
+  updateTodaysOrder, the row colouring. A date there would make the totals read as an
+  order and silently DOUBLE every figure, in the sheet and in the email. The blank
+  date plus the "TOTAL " label in column C is also how the rows are found for
+  deletion. Do not put a date in column A of a totals row.
+  Routes whose products are all zero (all-decline) are skipped. Both functions are
+  wrapped so a failure can never take down the job — this is a convenience, not part
+  of the order path.
+  SIDE EFFECT: the blank gap row is not deleted with the totals, so one blank row
+  accumulates between each ordering day's block. It reads as a day separator and is
+  harmless (blank column A means every read skips it).
+
 ## Last Updated
 2026-10-19

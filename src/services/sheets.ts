@@ -714,6 +714,123 @@ export async function markOrdersAsEmailed(dateStr: string, rowNumbers?: number[]
   logger.info(`Marked ${updates.length} orders as emailed for ${dateStr}`);
 }
 
+// ── Totals rows on the Orders tab ───────────────────────────────
+// After the 11:30 job, the day's totals are written as one row per route
+// directly beneath that day's orders, so the orders, the totals and the
+// warehouse email can be checked against each other in one place. They are
+// deleted at the start of the next ordering day.
+//
+// CRITICAL: column A (Date) stays BLANK on these rows. Every read path finds
+// orders by matching column A against the date — getTodaysOrders,
+// markOrdersAsEmailed, updateTodaysOrder. A date here would make the totals
+// read as an order and silently double every figure, in the sheet and in the
+// email. The blank date plus the TOTAL label is also how they are found again
+// for deletion.
+
+const TOTALS_ROW_PREFIX = 'TOTAL ';
+
+export async function clearOrdersTabTotalsRows(): Promise<void> {
+  try {
+    const sheets = getClient();
+    const sheetId = await getSheetIdByTitle(sheets, 'Orders');
+    if (sheetId === null) return;
+
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: config.google.sheetId,
+      range: 'Orders!A:D',
+    });
+    const rows = res.data.values || [];
+
+    const targets: number[] = []; // 0-based row indices
+    for (let i = 0; i < rows.length; i++) {
+      const dateCell = (rows[i]?.[0] ?? '').toString().trim();
+      const nameCell = (rows[i]?.[2] ?? '').toString().trim();
+      if (dateCell === '' && nameCell.toUpperCase().startsWith(TOTALS_ROW_PREFIX)) {
+        targets.push(i);
+      }
+    }
+    if (targets.length === 0) return;
+
+    // Bottom-up, so deleting one does not shift the index of the next.
+    const requests = targets
+      .sort((a, b) => b - a)
+      .map((i) => ({
+        deleteDimension: {
+          range: { sheetId, dimension: 'ROWS' as const, startIndex: i, endIndex: i + 1 },
+        },
+      }));
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: config.google.sheetId,
+      requestBody: { requests },
+    });
+    logger.info(`Cleared ${targets.length} totals row(s) from the Orders tab`);
+  } catch (err) {
+    logger.warn('Failed to clear totals rows from the Orders tab', { error: err });
+  }
+}
+
+export async function writeOrdersTabTotalsRows(dateStr: string): Promise<void> {
+  try {
+    await clearOrdersTabTotalsRows();
+
+    const sheets = getClient();
+    const orders = await getTodaysOrders(dateStr);
+    if (orders.length === 0) return;
+
+    // Summed per route — the same grouping the warehouse email uses, so the two
+    // can be read side by side.
+    const byRoute = new Map<string, Record<string, number>>();
+    for (const order of orders) {
+      const route = order.route || 'Unassigned';
+      if (!byRoute.has(route)) byRoute.set(route, {});
+      const totals = byRoute.get(route)!;
+      for (const product of config.products) {
+        totals[product] = (totals[product] || 0) + (order.quantities[product] || 0);
+      }
+    }
+
+    const rows: (string | number)[][] = [];
+    for (const [route, totals] of [...byRoute.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      if (!Object.values(totals).some((q) => q > 0)) continue; // all-decline route
+      rows.push([
+        '',
+        '',
+        `${TOTALS_ROW_PREFIX}${route}`,
+        route,
+        ...config.products.map((p) => totals[p] || 0),
+        `Totals for ${dateStr}`,
+      ]);
+    }
+    if (rows.length === 0) return;
+
+    // Column A is blank on totals rows by design, so reading it gives the last
+    // ORDER row and the first free row below it.
+    const colA = await sheets.spreadsheets.values.get({
+      spreadsheetId: config.google.sheetId,
+      range: 'Orders!A:A',
+    });
+    // +1 more leaves one blank row between the last order and the totals.
+    const startRow = (colA.data.values || []).length + 2;
+    const lastCol = columnLetter(4 + config.products.length);
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: config.google.sheetId,
+      range: `Orders!A${startRow}:${lastCol}${startRow + rows.length - 1}`,
+      valueInputOption: 'RAW',
+      requestBody: { values: rows },
+    });
+
+    logger.info(`Wrote ${rows.length} totals row(s) to the Orders tab for ${dateStr}`, {
+      firstRow: startRow,
+      routes: rows.map((r) => r[3]),
+    });
+  } catch (err) {
+    // Convenience only — must never take down the afternoon job.
+    logger.warn('Failed to write totals rows to the Orders tab', { error: err });
+  }
+}
+
 // ── Daily Totals tab ────────────────────────────────────────────
 // Rewrites the "Daily Totals" tab with product totals for today's orders,
 // broken out by route (25252 / 25248) plus an overall total column.
