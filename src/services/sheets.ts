@@ -266,6 +266,10 @@ export interface OrderRow {
   rawReply: string;
   emailed: boolean; // true if this order was already included in a warehouse email
   rowNumber: number; // 1-based row in the Orders sheet, used to mark exactly this row as emailed
+  // Twilio's id for the text that created this row. Stored so a reconciliation
+  // pass can ask Twilio what it received and match exactly, rather than guessing
+  // from message text. Blank for hand-entered and admin-placed orders.
+  messageSid?: string;
 }
 
 let sheetsClient: sheets_v4.Sheets | null = null;
@@ -558,6 +562,8 @@ async function applyOrderRowColors(
 
 export async function appendOrder(order: Omit<OrderRow, 'rowNumber'>): Promise<number> {
   const sheets = getClient();
+  // Columns A-D, the products, Raw Reply, Emailed (left blank — markOrdersAsEmailed
+  // owns it), then the Twilio message id.
   const row = [
     order.date,
     order.phone,
@@ -565,6 +571,8 @@ export async function appendOrder(order: Omit<OrderRow, 'rowNumber'>): Promise<n
     order.route,
     ...config.products.map((p) => order.quantities[p] ?? 0),
     order.rawReply,
+    '',
+    order.messageSid ?? '',
   ];
 
   const appendRes = await sheets.spreadsheets.values.append({
@@ -655,6 +663,7 @@ export async function getTodaysOrders(dateStr: string): Promise<OrderRow[]> {
       rawReply: row[4 + config.products.length] || '',
       emailed: (row[emailedCol] || '').toUpperCase() === 'Y',
       rowNumber: i + 2, // +2: row 1 is headers and the read starts at A2
+      messageSid: (row[emailedCol + 1] || '').toString().trim() || undefined,
     });
   }
 

@@ -260,5 +260,32 @@ If something looks like it should be working but isn't — check Render first. M
   accumulates between each ordering day's block. It reads as a day separator and is
   harmless (blank column A means every read skips it).
 
+## Recent Changes (continued)
+- Orders now record the Twilio Message SID in column Q of the Orders tab. Twilio
+  sends `MessageSid` with every inbound webhook; it was simply not being read.
+  Stored so a future reconciliation pass can ask Twilio what it actually received
+  and match EXACTLY against the sheet, instead of guessing from message text —
+  text matching cannot tell an already-applied correction from a missed order,
+  which was the main argument against building that sweep.
+  Column Q sits to the RIGHT of Emailed (P), so no product column shifts. appendOrder
+  writes Emailed as blank; markOrdersAsEmailed still owns that cell. Rows predating
+  this change simply have no Q value and read back as undefined.
+  Blank for hand-entered and admin-placed orders, which have no originating text.
+  Useful on its own: an order that looks wrong can be traced to the exact message.
+
+## Verified about Twilio (2026-10-26)
+Checked before designing the reconciliation sweep.
+- Listing message history via the REST API has NO per-request charge. Billing is per
+  message sent/received. Only the sweep's own alert/confirmation texts would cost.
+- Message bodies for INBOUND messages are readable after the fact — confirmed in the
+  console on a live inbound row. Message Body Redaction is NOT enabled. If it ever is,
+  Twilio drops inbound bodies after webhook delivery and the sweep has nothing to
+  parse. Setting: Messaging -> Settings -> General -> Message Redaction.
+- Default retention is 400 days, configurable 7-400.
+- Default page size 50, max 1000; bodies are included in the list response.
+- IMPORTANT: Twilio's date filters are GMT, not local. Same trap as the UTC order-date
+  bug — fetch a wide window and apply the Eastern cutoff in our own code.
+- Restricted API keys need `twilio/messaging/messages/list`.
+
 ## Last Updated
 2026-10-19

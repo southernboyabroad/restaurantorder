@@ -305,7 +305,11 @@ export const webhookRouter = express.Router();
 
 // Twilio sends POST to /sms when a customer replies
 webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: Request, res: Response) => {
-  const { Body: body, From: from } = req.body as { Body: string; From: string };
+  const { Body: body, From: from, MessageSid: messageSid } = req.body as {
+    Body: string;
+    From: string;
+    MessageSid?: string;
+  };
 
   logger.info('Inbound SMS received', { from, body });
 
@@ -644,6 +648,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
           quantities: zeroQuantities,
           rawReply: body,
           emailed: false,
+          messageSid,
         });
 
         // Update delivery tab with zeros and mark green
@@ -724,6 +729,7 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
         quantities: parsed.quantities,
         rawReply: body,
         emailed: false,
+        messageSid,
       });
     }
 
