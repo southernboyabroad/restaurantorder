@@ -302,5 +302,32 @@ Checked before designing the reconciliation sweep.
   refuse to send to a number missing it. Changing the setting in Render restarts the
   service — never during an ordering window.
 
+## Recent Changes (continued)
+- FIXED five problems with admin commands, found 2026-10-30 when "For B52s order two
+  4-inch and one toast" silently did nothing. Matters most when someone less familiar
+  with the formats is covering.
+  1. An admin text that is not a recognised command but LOOKS like one (has a digit,
+     or order/add/change/update/fix/correct) now gets a reply listing the formats.
+     It used to be ignored with no reply. Plain chatter is still ignored silently.
+  2. Spelled-out quantities no longer end up in the customer name. "order for B52
+     two 4-inch" read the customer as "B52 two" and dropped the quantity. Real number
+     words now end the name, except as the first word ("Five Guys" still works). The
+     voice-to-text quirks in WORD_NUMBERS ("to", "for", "ate") are excluded since they
+     can sit inside a name.
+  3. `order for` had NO email step. After 11:30 the order was recorded and never sent.
+     It now emails the warehouse straight away if today's batch has already gone (no
+     12:30 cutoff — an admin order is deliberate) and marks that one row. Before
+     11:30 it waits for the batch as before.
+  4. `order for` was refused by ANY existing row, including a zero/decline row. It is
+     now refused only by a row with items, and overwrites a decline row instead of
+     adding a second one — matching the customer-side fix.
+  5. Admin orders were always dated TODAY: the admin is not in the Customers tab, so
+     the early-order logic never applied, and an order placed on a non-ordering day
+     was filed under a date no scheduled job reads. It now gets the date the customer
+     would have got: today during the window or an ordering day's afternoon,
+     otherwise that customer's next ordering day.
+  The confirmation now names the DELIVERY DAY and says whether it was emailed or will
+  go at 11:30, so a misread date or a failed email is visible at once.
+
 ## Last Updated
 2026-10-19

@@ -164,6 +164,12 @@ const WORD_NUMBERS: Record<string, string> = {
   too: '2', to: '2', for: '4', fore: '4', ate: '8',
 };
 
+// Real number words only — the voice-to-text quirks above ("to", "for", "ate")
+// are ordinary words that can sit inside a restaurant name.
+const NAME_ENDING_NUMBER_WORDS = new Set(
+  Object.keys(WORD_NUMBERS).filter((w) => !['too', 'to', 'for', 'fore', 'ate'].includes(w)),
+);
+
 // Compound numbers like "twenty five" → "25"
 const COMPOUND_PATTERN = /\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)[- ]?(one|two|three|four|five|six|seven|eight|nine)\b/gi;
 
@@ -596,6 +602,10 @@ export function parseAdminOrderRequest(text: string): AdminOrderRequest | null {
     if (/^\d+$/.test(words[i])) { nameEndIdx = i; break; }
     const lower = words[i].toLowerCase();
     if (PRODUCT_ALIASES[lower] || config.products.includes(lower)) { nameEndIdx = i; break; }
+    // A spelled-out quantity also ends the name: "order for B52 two 4-inch" was
+    // reading the customer as "B52 two" and dropping the quantity. Not at i === 0,
+    // so a name that starts with one ("Five Guys") still works.
+    if (i > 0 && NAME_ENDING_NUMBER_WORDS.has(lower)) { nameEndIdx = i; break; }
   }
 
   if (nameEndIdx <= 0) return null; // no name found, or name starts with a product word

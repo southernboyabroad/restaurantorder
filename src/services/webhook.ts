@@ -251,52 +251,94 @@ async function handleAdminOrder(
     }
   }
 
-  // Block if they already have an order today
-  const todaysOrders = await getTodaysOrders(orderDateStr);
-  const existing = todaysOrders.find((o) => o.name.toLowerCase() === targetCustomer.name.toLowerCase());
-  if (existing) {
-    await sendSms(from, `${targetCustomer.name} already has an order today. Use "change ${targetCustomer.name}'s [product] to [qty]" to correct it instead.`);
+  // Which ordering day this belongs to. The caller always passes today, because an
+  // admin is not in the Customers tab, so the early-order logic never applied — an
+  // order placed on a Sunday was filed under Sunday, a date no scheduled job reads,
+  // and went nowhere. Give it the date the customer themselves would have got:
+  // during the ordering window or an ordering day's afternoon → today; before the
+  // window, evenings, and non-ordering days → that customer's next ordering day.
+  if (!isInsideOrderingWindow() && isEarlyOrderWindow()) {
+    orderDateStr = getNextOrderingDate(targetCustomer).dateStr;
+  }
+
+  const ordersForDay = await getTodaysOrders(orderDateStr);
+  let existing: (typeof ordersForDay)[number] | undefined;
+  for (const o of ordersForDay) {
+    if (o.name.toLowerCase() === targetCustomer.name.toLowerCase()) existing = o;
+  }
+  const existingHasItems = !!existing && Object.values(existing.quantities).some((q) => q > 0);
+
+  // Block only a REAL existing order, to stop accidental double-ordering. An
+  // all-zero row is a decline, and a customer who declined and then rang in an
+  // order must be orderable — the same fix already made on the customer side.
+  if (existingHasItems) {
+    await sendSms(
+      from,
+      `${targetCustomer.name} already has an order for that day. To add to it:\nadd 2 toast to ${targetCustomer.name}\nTo set an exact number:\nchange ${targetCustomer.name}'s toast to 4`,
+    );
     res.type('text/xml').send('<Response></Response>');
     return;
   }
 
-  // Record the order
-  await appendOrder({
-    date: orderDateStr,
-    phone: targetCustomer.phone,
-    name: targetCustomer.name,
-    route: targetCustomer.route || '',
-    quantities: parsed!.quantities,
-    rawReply: `[Admin order] ${adminOrder.orderText}`,
-    emailed: false,
-  });
+  // Record the order — overwriting a decline row rather than adding a second row.
+  const rawReply = `[Admin order] ${adminOrder.orderText}`;
+  let rowNumber: number;
+  if (existing) {
+    await updateTodaysOrder(targetCustomer.name, orderDateStr, parsed!.quantities, 'set', rawReply);
+    rowNumber = existing.rowNumber;
+  } else {
+    rowNumber = await appendOrder({
+      date: orderDateStr,
+      phone: targetCustomer.phone,
+      name: targetCustomer.name,
+      route: targetCustomer.route || '',
+      quantities: parsed!.quantities,
+      rawReply,
+      emailed: false,
+    });
+  }
 
-  // Update delivery tab
+  const delivery = getDeliveryDate(new Date(`${orderDateStr}T12:00:00`));
+  const deliveryDay = deliveryDayName(delivery);
+
   try {
-    const orderDelivery = getDeliveryDate(new Date(`${orderDateStr}T12:00:00`));
-    await updateDeliveryTabOrder(targetCustomer.name, parsed!.quantities, orderDelivery);
+    await updateDeliveryTabOrder(targetCustomer.name, parsed!.quantities, delivery);
   } catch (tabErr) {
     logger.error('Failed to update delivery tab for admin order', { error: tabErr });
   }
 
-  // Send confirmation
-  const itemLines = Object.entries(parsed!.quantities)
-    .filter(([, qty]) => qty > 0)
-    .map(([product, qty]) => {
-      const display = product
-        .replace(/_/g, ' ')
-        .replace(/\blong\b/gi, 'hot dog')
-        .replace(/\binstitutional sandwich\b/gi, 'sandwich');
-      return `${display} - ${qty}`;
-    })
-    .join('\n');
+  // If today's 11:30 email has already gone, nothing else will send this — admin
+  // orders had no email step at all. Send it now. No 12:30 cutoff here: unlike a
+  // customer text, an admin order is a deliberate decision to send.
+  let emailNote: string;
+  const isToday = orderDateStr === easternDateStr();
+  if (isToday && (await hasBatchBeenSent(orderDateStr))) {
+    try {
+      const routeLabel = targetCustomer.route || 'Unassigned';
+      await sendWarehouseEmail(
+        `ADDITIONS to Route ${routeLabel}- ${formatDeliveryDate(delivery)}`,
+        formatOrderText(parsed!.quantities, deliveryDay),
+        formatOrderHtml(parsed!.quantities, deliveryDay),
+      );
+      await markOrdersAsEmailed(orderDateStr, [rowNumber]);
+      emailNote = 'Emailed to the warehouse.';
+    } catch (emailErr) {
+      logger.error('Failed to email admin order to warehouse', { error: emailErr, customer: targetCustomer.name });
+      emailNote = 'The email to the warehouse FAILED. Open /trigger-email to send it.';
+    }
+  } else {
+    emailNote = 'It will go out in the 11:30 email.';
+  }
 
-  const msg = `Order placed for ${targetCustomer.name}:\n\n${itemLines}`;
+  // The delivery day is stated so a misread date is obvious immediately.
+  const msg = `Order placed for ${targetCustomer.name}, ${deliveryDay} delivery:\n\n${formatQuantityLines(parsed!.quantities)}\n\n${emailNote}`;
   await sendSms(from, msg);
   logger.info('Admin order placed on behalf of customer', {
     placedBy: from,
     customer: targetCustomer.name,
+    orderDate: orderDateStr,
     quantities: parsed!.quantities,
+    emailNote,
   });
   res.type('text/xml').send('<Response></Response>');
 }
@@ -446,7 +488,18 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
     // (unknown-number errors, order parsing, etc.).  Corrections
     // are already handled above, so this is the right place.
     if (isAdmin) {
-      logger.info('Admin SMS — no bot reply', { from, body });
+      // If it looks like an attempted command, say it wasn't understood. Silence
+      // here meant a mistyped order ("For B52s order two 4-inch") simply vanished
+      // with nothing to tell the sender. Plain chatter still gets no reply.
+      const looksLikeCommand =
+        /\d/.test(parsedBody) || /\b(order|add|change|update|fix|correct)\b/i.test(parsedBody);
+      if (looksLikeCommand) {
+        await sendSms(
+          from,
+          `Didn't understand that. Commands:\norder for B52 2 4-inch 1 toast\nadd 2 toast to B52\nchange B52's toast to 4`,
+        );
+      }
+      logger.info('Admin SMS — not a recognised command', { from, body, repliedWithHelp: looksLikeCommand });
       res.type('text/xml').send('<Response></Response>');
       return;
     }
