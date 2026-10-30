@@ -3,7 +3,7 @@ import { config } from '../config';
 import { validateTwilioWebhook, buildOrderPromptMessage, buildConfirmationMessage } from './sms';
 import { findCustomerByPhone, findCustomersByPhone, findCustomerByNameHint, normalizePhone, appendOrder, markOrdersAsEmailed, hasBatchBeenSent, getLastOrderForCustomer, getTodaysOrders, updateTodaysOrder, getOtherContactsForCustomer, logMessage, Customer } from './sheets';
 import { parseOrder, parseOrderStrict, isAffirmativeReply, isRepeatOrderRequest, isDeclineReply, isCalledInReply, parseCorrectionRequest, preprocessCorrectionText, isReactionMessage, parseAdminOrderRequest } from './orderParser';
-import { sendSms, forwardToAdmin } from './sms';
+import { sendSms, forwardToAdmin, isAdminPhone } from './sms';
 import { updateDeliveryTabOrder } from './deliveryTab';
 import { formatOrderText, formatOrderHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName } from './orderSummary';
 import { sendWarehouseEmail } from './email';
@@ -324,7 +324,8 @@ webhookRouter.post('/sms', express.urlencoded({ extended: false }), async (req: 
   // Inside the normal window (Wed/Fri/Sat 9:30 AM - 1 PM) → process normally
   // Early order window (after 6 PM on ordering days, or non-ordering days) → accept for next delivery
   // Dead zone (1 PM - 6 PM on ordering days) → stay silent (admin is exempt)
-  const isAdminSender = !!config.adminPhoneNumber && normalizePhone(from) === normalizePhone(config.adminPhoneNumber);
+  // Any configured admin number may send admin commands (corrections, "order for ...").
+  const isAdminSender = isAdminPhone(from);
   const insideWindow = isInsideOrderingWindow();
   const earlyOrder = !insideWindow && isEarlyOrderWindow();
 

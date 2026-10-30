@@ -33,11 +33,13 @@ export async function forwardToAdmin(
   body: string,
   customerPhone?: string,
 ): Promise<void> {
+  // Forwards go to the FIRST admin number only: each one is a billed SMS, and a
+  // second recipient would double the cost of every customer text.
   const adminPhone = config.adminPhoneNumber;
   if (!adminPhone) return;
 
-  // Don't forward messages that are already to/from the admin
-  if (customerPhone && normalizeForCompare(customerPhone) === normalizeForCompare(adminPhone)) return;
+  // Don't forward messages from any admin — they already know what they sent.
+  if (customerPhone && isAdminPhone(customerPhone)) return;
 
   const arrow = direction === 'out' ? '→' : '←';
   const forwardBody = `[${arrow} ${customerName}]\n${body}`;
@@ -57,6 +59,25 @@ export async function forwardToAdmin(
 
 function normalizeForCompare(phone: string): string {
   return phone.replace(/\D/g, '').slice(-10);
+}
+
+// True when the number is any of the configured admin numbers.
+export function isAdminPhone(phone: string): boolean {
+  const target = normalizeForCompare(phone);
+  if (!target) return false;
+  return config.adminPhoneNumbers.some((a) => normalizeForCompare(a) === target);
+}
+
+// Sends to every admin number. Used for alerts, which are rare and are exactly
+// what more than one person should see.
+export async function alertAdmins(message: string): Promise<void> {
+  for (const phone of config.adminPhoneNumbers) {
+    try {
+      await sendSms(phone, message);
+    } catch (err) {
+      logger.error('Could not send admin alert', { error: err, to: phone });
+    }
+  }
 }
 
 /**

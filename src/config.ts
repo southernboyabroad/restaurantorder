@@ -18,7 +18,14 @@ export const config = {
   logLevel: optional('LOG_LEVEL', 'info'),
   schedulerEnabled: optional('SCHEDULER_ENABLED', 'false').toLowerCase() === 'true',
   testPhoneNumber: optional('TEST_PHONE_NUMBER', ''),
-  adminPhoneNumber: optional('ADMIN_PHONE_NUMBER', ''),
+  // ADMIN_PHONE_NUMBER may hold several numbers, comma-separated. The FIRST gets
+  // every forwarded customer text (one copy only — each forward is a billed SMS).
+  // ALL of them get failure alerts and can send admin commands.
+  adminPhoneNumbers: optional('ADMIN_PHONE_NUMBER', '')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean),
+  adminPhoneNumber: optional('ADMIN_PHONE_NUMBER', '').split(',')[0].trim(),
 
   twilio: {
     accountSid: required('TWILIO_ACCOUNT_SID'),

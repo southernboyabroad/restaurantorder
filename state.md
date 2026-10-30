@@ -287,5 +287,20 @@ Checked before designing the reconciliation sweep.
   bug — fetch a wide window and apply the Eastern cutoff in our own code.
 - Restricted API keys need `twilio/messaging/messages/list`.
 
+## Recent Changes (continued)
+- ADMIN_PHONE_NUMBER now accepts several numbers, comma-separated, e.g.
+  `+16785550001,+16785559999`. Added so the owner's girlfriend can cover while he
+  travels without him dropping out of the loop.
+  - The FIRST number gets every forwarded customer text. One copy only — each
+    forward is a billed outbound SMS, and a second recipient would double that.
+  - ALL numbers get failure alerts (`alertAdmins()` in sms.ts). Rare, and exactly
+    what more than one person should see.
+  - ALL numbers count as admin senders (`isAdminPhone()`), so either can send
+    corrections and "order for ..." commands, and neither gets bot replies.
+  - A single number behaves exactly as before.
+  Write numbers WITH the +1 country code: matching works without it, but Twilio may
+  refuse to send to a number missing it. Changing the setting in Render restarts the
+  service — never during an ordering window.
+
 ## Last Updated
 2026-10-19

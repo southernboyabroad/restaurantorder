@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { getCustomers, getTodaysOrders, markOrdersAsEmailed, syncOrdersToRestaurantDataSheets, logMessages, updateDailySummaryTab, mergeOrdersByCustomer, clearOrdersTabTotalsRows, writeOrdersTabTotalsRows } from './sheets';
-import { sendSms, buildOrderPromptMessage } from './sms';
+import { sendSms, buildOrderPromptMessage, alertAdmins } from './sms';
 import { formatSummaryText, formatSummaryHtml, getDeliveryDate, formatDeliveryDate, deliveryDayName, groupOrdersByRoute } from './orderSummary';
 import { sendWarehouseEmail } from './email';
 import { ensureOrdersSheet } from './sheets';
@@ -272,13 +272,7 @@ async function afternoonJob(): Promise<void> {
     if (failedRoutes.length > 0) {
       const alert = `Order email FAILED for route ${failedRoutes.join(', ')} on ${dateStr}. Those orders have NOT reached the warehouse. Open /trigger-email to retry.`;
       logger.error(alert);
-      if (config.adminPhoneNumber) {
-        try {
-          await sendSms(config.adminPhoneNumber, alert);
-        } catch (smsErr) {
-          logger.error('Could not send the failed-email alert SMS', { error: smsErr });
-        }
-      }
+      await alertAdmins(alert);
     }
 
     // Re-sync all today's orders to route-specific Restaurant_Data sheets so
